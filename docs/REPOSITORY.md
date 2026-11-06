@@ -12,7 +12,9 @@ Keep `.env`, `*.local.json`, `rule-editor-enabled.json`, actual plan registries,
 
 ## Preparing a review checkout
 
-Use a separate authenticated Git clone of the original repository and create `windows-hyperv-port`. Compare its HEAD with the source baseline before copying changes; do not overwrite upstream changes blindly. Apply only reviewed source, examples, synthetic fixtures, tests and documentation. Keep the operational download and its local files separate from that checkout.
+This repository is `mashaojin/soar-investigation-windows`, a separate private Windows project with `main` as its default branch. The original Mac project remains at `mashaojin/soc-pipeline`. Its existing Windows-port branch is historical and is not the clone target for this distribution.
+
+Clone the Windows repository, then use a topic branch for future changes. Preserve upstream attribution and compare incoming changes before applying them; do not overwrite local differences or copy operational state from either project.
 
 The offline suite must pass from this clean checkout without VMs, Ollama, Telegram credentials or operational databases. Also run the dashboard JavaScript syntax checks. Review untracked files as well as tracked changes: a new module or workflow must not be omitted accidentally.
 

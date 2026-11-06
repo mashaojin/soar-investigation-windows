@@ -1,6 +1,6 @@
-# Windows / WSL2 / Hyper-V setup
+# soar-investigation-windows: setup
 
-Run Python in **WSL2 Ubuntu**, not native Windows Python: the pipeline uses Unix locking and ownership checks. Windows runs Ollama; Hyper-V hosts the Linux guests. The Mac/UTM implementation and example profile remain available.
+Run Python in **WSL2 Ubuntu**, not native Windows Python: the pipeline uses Unix locking and ownership checks. Windows runs Ollama; Hyper-V hosts the Linux guests. This separate repository is the Windows distribution of [soc-pipeline](https://github.com/mashaojin/soc-pipeline); retained Mac modules/examples are compatibility references, not the Windows setup path.
 
 This guide describes setup, not authorization to modify a VM or block traffic. New configuration defaults to **dry run**. Initialization preserves existing local files; inspect the actual response mode before starting.
 

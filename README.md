@@ -1,6 +1,10 @@
-# SOAR investigation pipeline
+# Windows SOAR Investigation Lab — WSL2, Hyper-V and Ollama
 
-A Python-led security lab that turns **Suricata alerts into evidence-based investigations, dashboard records and human-approved responses**.
+[![Offline CI](https://github.com/mashaojin/soar-investigation-windows/actions/workflows/tests.yml/badge.svg)](https://github.com/mashaojin/soar-investigation-windows/actions/workflows/tests.yml)
+
+**soar-investigation-windows** is a Windows-focused, Python-led lab that turns **Suricata alerts into evidence-based investigations, dashboard records and human-approved responses**.
+
+This is a separate repository derived from [soc-pipeline](https://github.com/mashaojin/soc-pipeline). Its default `main` branch contains the Windows project; users do not need to select a Windows branch in the original Mac repository. Upstream compatibility modules/tests are retained without changing the original repository.
 
 **Suricata → Python correlation and SSH evidence → one bounded Ollama assessment → Python validation → Telegram decision → optional temporary SSH deny with victim-side rollback.**
 
@@ -12,7 +16,7 @@ The model assesses evidence. Python owns collection, validation and response pol
 
 - [Workflow and decision boundaries](#workflow)
 - [Dashboard and Telegram screenshots](#screenshots)
-- [Supported platforms](#supported-platforms)
+- [Windows lab requirements](#windows-lab-requirements)
 - [Quick start](#quick-start)
 - [Configuration and credentials](#configuration-and-credentials)
 - [Three manual scenarios](#three-manual-scenarios)
@@ -95,30 +99,35 @@ The dashboard preserves readable incident numbers, timestamps, grouped alerts, A
 
 The live screenshot shows a completed historical response, so its pending approval buttons are no longer displayed. Current eligible live requests offer **YES — Approve LIVE 60s block** and **NO — Deny block / report only**. Current manual-review notices offer **Benign / Suspicious / Need more evidence**. Screenshot provenance and limits are documented in [SCREENSHOTS.md](docs/SCREENSHOTS.md).
 
-## Supported platforms
+## Windows lab requirements
 
-| | Mac/UTM | Windows/Hyper-V |
-| --- | --- | --- |
-| Python runtime | macOS Python 3.12+ | WSL2 Ubuntu Python 3.12+; not native Windows Python |
-| Guest transport | Preserved UTM guest execution and SSH | Verified SSH through a bounded Windows process bridge |
-| Ollama | Local host origin | Windows loopback via curl.exe stdio, or explicitly configured origin |
-| Model example | gemma4:e4b | gemma3:1b; quality limitations documented |
-| Response adapter | Existing UFW/UTM guard | Fixed Victim SSH helper and isolated nftables deny |
-| Fresh configuration | Mac defaults | Explicit Windows profile |
+| Component | Requirement |
+| --- | --- |
+| Host | Windows 11 Pro with Hyper-V; 16 GB RAM lab tested |
+| Python | WSL2 Ubuntu, Python 3.12+; **not native Windows Python** |
+| Inference | Ollama on Windows; explicit endpoint and model identity |
+| Default example model | gemma3:1b, 8,192 context and 1,024 output budget; known quality failures remain documented |
+| Victim | Ubuntu guest with SSH, Suricata/EVE and readable scoped SSH journal evidence |
+| Trust-Client | Ubuntu guest for approved tests and account-scope scenarios |
+| Attacker | Kali guest for the controlled unapproved scenario |
+| Transport | WSL OpenSSH with verified keys; Windows process bridge and PowerShell 7; Windows curl.exe for loopback Ollama |
+| Optional live response | Reviewed fixed Victim SSH helper, nftables and systemd rollback; one human approval per eligible response |
 
-Python uses the standard library: there is no pip installation step. Node is needed for dashboard JavaScript checks in development/CI, not for running the Python dashboard. Ollama, the selected model, SSH, guest sensor services and platform tooling are separate prerequisites; initialization does not install or grant access to them.
+Python uses the standard library: there is no pip installation step. Node is used for development/CI syntax checks, not the Python dashboard. Initialization does not install guest services, grant access or provision privileged helpers. Inspect existing software before installing anything. On a 16 GB host, run only the guests required for a scenario and monitor memory during inference.
 
-The lab has three roles: **Victim Ubuntu** (SSH + Suricata), **Trust-Client Ubuntu** (approved tests), and **Kali** (controlled unapproved activity). The host/WSL management path must remain protected. Examples are not discovered addresses: inspect guest masks, routes, usernames and console host-key fingerprints before configuring them. Hyper-V Default Switch DHCP addresses may change after reboot.
+Public addresses are examples, not discovery. Verify guest masks, routes, usernames and console host-key fingerprints. Protect the real management source as observed by Victim. Hyper-V Default Switch DHCP addresses can change after reboot; revalidate identities and scope before collecting or responding.
+
+This repository's setup path is Windows/WSL2/Hyper-V. Legacy Mac defaults and tests remain for upstream compatibility; Mac deployment instructions belong to the [original project](https://github.com/mashaojin/soc-pipeline).
 
 ## Quick start
 
 ### 1. Obtain and test the source
 
-The Windows port is published on the `windows-hyperv-port` branch:
+Clone this Windows repository; the default branch is `main`:
 
 ```sh
-git clone --branch windows-hyperv-port https://github.com/mashaojin/soc-pipeline.git
-cd soc-pipeline
+git clone https://github.com/mashaojin/soar-investigation-windows.git
+cd soar-investigation-windows
 python3 -m unittest discover -s tests -q
 ```
 
@@ -128,17 +137,13 @@ Offline tests use synthetic fixtures, temporary databases and mocked external se
 
 ### 2. Configure the selected platform
 
-**Windows:** execute the following from WSL, then follow the staged [Windows guide](docs/WINDOWS.md):
+Execute the following **inside WSL**, then follow the staged [Windows guide](docs/WINDOWS.md):
 
 ```sh
 python3 configure_local.py --profile windows-hyperv
 ```
 
-**Mac:** use the preserved [Mac setup guide](docs/SETUP.md):
-
-```sh
-python3 configure_local.py --profile macos-utm
-```
+Always select `--profile windows-hyperv` for this lab. The unqualified initializer retains upstream defaults for compatibility.
 
 Review the newly created private files. Keep lab/runtime model settings consistent. Configure actual guest identities, protected management, strict SSH trust and sensor access before starting collection. Do not copy historical databases, plans, approvals or cursors from a different installation.
 
@@ -159,15 +164,6 @@ python3 windows_lab.py monitor --collection-only
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) in the Windows browser. Check monitor/component health, not HTTP availability alone. **The dashboard does not start the collector, model worker or Telegram polling.**
 
 After the relevant prerequisites and assessment-mode authorization are complete, replace collection-only mode with the appropriate command from [Windows operating modes](docs/WINDOWS.md#8-select-an-explicit-assessmentresponse-mode). Never run two monitors against the same database or two pollers for the same bot.
-
-For Mac, the corresponding foreground commands are:
-
-```sh
-python3 dashboard.py
-python3 monitor.py --config live.ssh.local.json --runtime runtime.ssh.live.local.json --db ssh-live.sqlite3
-```
-
-Run those commands in separate terminals. Inspect the existing local response mode before starting any demonstration.
 
 ## Configuration and credentials
 
@@ -212,7 +208,7 @@ python3 ~/soc-demo/ssh_demo_client.py --mode scope-violation --execute --lab-con
 
 The helper checks its route source, uses strict host-key checking and makes six bounded deliberately failed attempts, with a pause between bursts. Scope-violation mode uses one root and five soc_test attempts. It stops on unexpected success. Verify actual Victim authentication evidence; Permission denied on the client does not prove all six failures were logged.
 
-Python waits for the complete correlation/plan evidence window plus arrival margin before assessment. Approvals and readable incident IDs are local to the current installation. The [demonstration guide](docs/DEMO.md) explains the original Mac lab; [Windows setup](docs/WINDOWS.md) gives the port-specific steps.
+Python waits for the complete correlation/plan evidence window plus arrival margin before assessment. Approvals and readable incident IDs are local to the current installation. Use [Windows setup](docs/WINDOWS.md) for client staging, scenario readiness and mode-specific commands. Legacy demonstration documentation is retained as upstream reference only.
 
 ## Telegram decisions
 
@@ -314,7 +310,7 @@ Candidates can override model, thread count or instruction file for evaluation o
 ## Documentation
 
 - [Windows / WSL2 / Hyper-V setup](docs/WINDOWS.md)
-- [Original Mac/UTM setup](docs/SETUP.md)
+- [Upstream Mac project](https://github.com/mashaojin/soc-pipeline) — separate project; legacy reference docs in this checkout are not the Windows setup path
 - [Three-scenario demonstration](docs/DEMO.md)
 - [Architecture and decision boundaries](docs/ARCHITECTURE.md)
 - [Settings, reviews and operations](docs/OPERATIONS.md)
@@ -323,7 +319,7 @@ Candidates can override model, thread count or instruction file for evaluation o
 - [Repository and publication rules](docs/REPOSITORY.md)
 
 ```text
-soc-pipeline/
+soar-investigation-windows/
 ├── configure_local.py       # Initialize absent private configuration
 ├── monitor.py               # Continuous collection, analysis and response orchestration
 ├── dashboard.py             # Loopback dashboard and protected APIs
