@@ -19,6 +19,7 @@ The model assesses evidence. Python owns collection, validation and response pol
 - [Dashboard and Telegram screenshots](#screenshots)
 - [Windows lab requirements](#windows-lab-requirements)
 - [Quick start](#quick-start)
+- [Dashboard features and settings](#dashboard-guide)
 - [Configuration and credentials](#configuration-and-credentials)
 - [Three manual scenarios](#three-manual-scenarios)
 - [Telegram decisions and live response](#telegram-decisions)
@@ -118,7 +119,7 @@ Python uses the standard library: there is no pip installation step. Node is use
 
 Public addresses are examples, not discovery. Verify guest masks, routes, usernames and console host-key fingerprints. Protect the real management source as observed by Victim. Hyper-V Default Switch DHCP addresses can change after reboot; revalidate identities and scope before collecting or responding.
 
-This repository's setup path is Windows/WSL2/Hyper-V. Legacy Mac defaults and tests remain for upstream compatibility; Mac deployment instructions belong to the [original project](https://github.com/mashaojin/soc-pipeline).
+This repository's setup path is Windows/WSL2/Hyper-V. Legacy Mac defaults and tests remain for upstream compatibility; Mac deployment instructions belong to the [original project](https://github.com/mashaojin/soar-investigation-macOS).
 
 ## Quick start
 
@@ -165,6 +166,60 @@ python3 windows_lab.py monitor --collection-only
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) in the Windows browser. Check monitor/component health, not HTTP availability alone. **The dashboard does not start the collector, model worker or Telegram polling.**
 
 After the relevant prerequisites and assessment-mode authorization are complete, replace collection-only mode with the appropriate command from [Windows operating modes](docs/WINDOWS.md#8-select-an-explicit-assessmentresponse-mode). Never run two monitors against the same database or two pollers for the same bot.
+
+## Dashboard guide
+
+The dashboard is an investigation workspace and a set of explicit controls—not a service launcher. Check monitor/component health and response mode before using it. The complete [dashboard guide](docs/DASHBOARD.md) explains every panel, supported field, validation state and change boundary.
+
+### Read an incident
+
+Select an item in **Incident history**, then inspect its number/revision, source/target, AI verdict, investigation stages, **Observed facts**, **Python scope comparisons**, **Authorization context** and **Telegram and response**. AI verdict, workflow state and human conclusion are separate: a Suspicious assessment can still require review. Stage progress is completion of recorded steps, not a prediction of model runtime. **Refresh** reads saved state; it does not start collection or retry an action.
+
+### Create an approved test plan
+
+1. Click **New test plan**. Enter the configured source/Victim, permitted account such as `soc_test`, total failed-attempt limit, operator and a future whole-minute window lasting **1–10 minutes**.
+2. Check the form's timezone, click **Validate**, and review the exact source, target, accounts, limit and start/end times. Validation saves a draft, not an authorization.
+3. Click **Approve plan before its start**. Confirm approval and retained run instructions, then execute the test manually on the named VM during that window.
+4. Use **Plans → Plan history → View plan / Show run instructions** to inspect a version. **Repeat with new times** creates a new draft that needs new validation and approval.
+
+The failure limit applies across the whole plan window; it is not a fixed AI Suspicious threshold. Overlapping approved scope is rejected. **Cancel draft** does not revoke an already approved plan. See [test plans](docs/DASHBOARD.md#2-create-validate-and-approve-a-test-plan).
+
+### Change the Suricata rule
+
+First prepare, review, install and independently verify the optional rule helper using the [Windows helper procedure](docs/WINDOWS.md#7-prepare-and-review-privileged-helpers). Its receipt must match the configured platform/Victim. This uses the Windows SSH/helper path, not UTM.
+
+1. Open **Settings → Suricata rule → Read current rule from Victim**.
+2. Edit only the supported alert message, threshold `count`/`seconds` and revision; increase `rev` for a change. TCP/22, SYN matching and SID `9001001` remain fixed.
+3. Click **Validate on Victim**, inspect the diff/test result, then deliberately click **Apply validated rule and reload**. Validation alone leaves the active rule unchanged.
+4. Confirm an `active` result and read Victim status again. Use **Restore previous rule and reload** when an editor backup is available; read current status before retrying an uncertain operation.
+
+Applied rules affect future sensor processing. Run fresh manual traffic to test them; historical evidence is not regenerated. See [rule editing and recovery](docs/DASHBOARD.md#4-read-validate-and-apply-a-suricata-rule).
+
+### Save, compare and activate a prompt
+
+1. Open **Settings → AI prompt**, note **Active**, choose a **Saved version** and click **Load selected version**.
+2. Edit **Instruction**, give it a **Version label**, then click **Save and validate version**. This stores a candidate; it does not activate it.
+3. Select a **Saved SSH incident** and the saved candidate, then click **Compare original vs selected prompt**. Inspect both new model results, errors and identical evidence hash. Comparisons need a reconstructable original instruction and share the inference queue with live work.
+4. To adopt a candidate, select that saved version and click **Activate selected version**. Verify the **Active** label/hash. Future requests use it; historical and in-flight requests keep their original instruction.
+5. To revert, select a previous saved version and activate it. Merely loading text or closing Settings does not change the active version.
+
+Comparisons collect no new logs, send no Telegram messages and perform no firewall actions. Saving/activating a prompt changes neither Python validators nor response policy. On Windows, prompt activation does not change collection-only/experimental/live mode or establish model qualification. Preserve the documented unverified-model limits and explicit mode gates. See [prompt workflow and limitations](docs/DASHBOARD.md#5-save-compare-and-activate-a-prompt).
+
+### Read configuration and complete human review
+
+**Settings → Pipeline configuration** is read only: it explains grouping, log-arrival allowance, pre-alert context, approved evidence scope, model identity and token limits. Read the configured Windows model/options rather than assuming the Mac screenshot’s values; this panel does not change operating mode. It is not a Python-code, credential or response-mode editor.
+
+For an incident awaiting review, inspect its evidence, then use **Human review → Reviewer name → Your conclusion → optional Review notes → Save human review**. Benign/Suspicious resolves the human review; Need more evidence keeps it open. **Review history** retains older entries, and **Add follow-up review** records a new conclusion. Human review never overwrites the AI assessment or approves a firewall block. See [human review](docs/DASHBOARD.md#7-record-a-human-review).
+
+| Change | When it takes effect |
+| --- | --- |
+| Approve plan | Only the recorded scope/window; no traffic or response is executed |
+| Apply validated rule | New sensor processing after verified reload |
+| Save prompt | Stored candidate only |
+| Activate selected prompt | New assessment requests |
+| Compare prompts | Two fresh requests on saved evidence only |
+| Save human review | Separate current-snapshot human conclusion |
+| Telegram block approval | Exact eligible request, after independent worker revalidation |
 
 ## Configuration and credentials
 
@@ -310,8 +365,9 @@ Candidates can override model, thread count or instruction file for evaluation o
 
 ## Documentation
 
+- [Dashboard controls, test plans, rules, prompts and human review](docs/DASHBOARD.md)
 - [Windows / WSL2 / Hyper-V setup](docs/WINDOWS.md)
-- [Upstream Mac project](https://github.com/mashaojin/soc-pipeline) — separate project; legacy reference docs in this checkout are not the Windows setup path
+- [Upstream Mac project](https://github.com/mashaojin/soar-investigation-macOS) — separate project; legacy reference docs in this checkout are not the Windows setup path
 - [Three-scenario demonstration](docs/DEMO.md)
 - [Architecture and decision boundaries](docs/ARCHITECTURE.md)
 - [Settings, reviews and operations](docs/OPERATIONS.md)
