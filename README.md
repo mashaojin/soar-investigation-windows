@@ -1,4 +1,4 @@
-# Windows SOAR Investigation Lab — WSL2, Hyper-V and Ollama
+# Windows SSH Investigation and Response Lab
 
 [![Offline CI](https://github.com/mashaojin/soar-investigation-windows/actions/workflows/tests.yml/badge.svg)](https://github.com/mashaojin/soar-investigation-windows/actions/workflows/tests.yml)
 
