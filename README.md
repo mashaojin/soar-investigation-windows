@@ -4,7 +4,7 @@
 
 **soar-investigation-windows** is a Windows-focused, Python-led lab that turns **Suricata alerts into evidence-based investigations, dashboard records and human-approved responses**.
 
-This is a separate repository derived from [soc-pipeline](https://github.com/mashaojin/soc-pipeline). Its default `main` branch contains the Windows project; users do not need to select a Windows branch in the original Mac repository. Upstream compatibility modules/tests are retained without changing the original repository.
+This repository is the dedicated Windows (WSL2/Hyper-V) implementation of soc-pipeline, retaining upstream test compatibility without modifying the original repository.
 
 **Suricata → Python correlation and SSH evidence → one bounded Ollama assessment → Python validation → Telegram decision → optional temporary SSH deny with victim-side rollback.**
 
