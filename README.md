@@ -70,16 +70,22 @@ The operator can complete a requested review in either place. Review choices rec
 
 ## Screenshots
 
-These are actual, cropped screenshots from the **original Mac/UTM lab**. They illustrate the shared dashboard and Telegram workflow, not proof of a completed Windows Telegram-to-worker live response. No Windows screenshots or synthetic messages are presented as successful live enforcement.
+These captures come from the **macOS/UTM lab** and illustrate the shared dashboard. The Windows dashboard uses its configured lab addresses and model. The rollback shown here was observed on macOS.
 
 ### Dashboard
 
-![Original Mac/UTM dashboard with readable incident IDs, evidence progress and response state](docs/images/dashboard-overview.jpg)
+![SOAR dashboard showing a completed SSH rollback, restored access, and all six incident stages resolved](docs/images/dashboard-live-rollback.jpg)
+
+*Recorded macOS rehearsal. The dashboard shows the Suspicious assessment, human review, separate response approval, and verified rollback.*
 
 The dashboard preserves readable incident numbers, timestamps, grouped alerts, AI assessments, independent human conclusions and response progress. Monitor health is checked by heartbeat, separately from saved database state.
 
 <details>
-<summary>Test-plan editor and incident assessment</summary>
+<summary>AI model settings, test-plan editor, and incident assessment</summary>
+
+![Settings drawer showing the AI prompt, Suricata rule, and AI model selection tabs](docs/images/dashboard-model-settings.jpg)
+
+*The AI model selection panel shows the active provider and model, the synthetic test control, and the activation button.*
 
 ![Test-plan editor: source, victim, accounts, attempt limit and timing](docs/images/test-plan-editor.jpg)
 
