@@ -150,7 +150,7 @@ def incident_view(incident,plans,now=None,plan_error=None,lab=None):
         final_state='done' if notice.get('status')=='sent' else 'waiting'
     stages=[{'label':'Detection','state':'done'},
             {'label':'Evidence','state':'done' if incident.get('metadata',{}).get('assessment_data') or len(traces)>=2 else 'active' if analysis=='running' else 'waiting'},
-            {'label':'AI assessment','state':'attention' if analysis=='manual_review' else 'done' if report else 'active' if analysis=='running' else 'waiting'},
+            {'label':'AI assessment','state':'attention' if analysis=='manual_review' and not reviewed_response else 'done' if report else 'active' if analysis=='running' else 'waiting'},
             {'label':'Approval not required' if decision_required is False else 'Response approval','state':decision_state},
             {'label':final_label,'state':final_state}]
     if analysis=='manual_review' or human:

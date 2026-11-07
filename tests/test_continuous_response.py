@@ -103,6 +103,17 @@ class ContinuousResponseTests(unittest.TestCase):
         else:
             service.save(dict(review,expected_review_id=None,reviewer='Test operator',conclusion='SUSPICIOUS',notes=''))
 
+    def test_reviewed_live_completion_resolves_all_dashboard_stages(self):
+        incident=dict(incident_id='i', evidence=self.evidence, analysis_status='manual_review',
+            metadata={'assessment_data':{'observed_facts':{'E2':{}}}},
+            report=dict(format='advisory_text',reason='Assessment: Suspicious'),
+            human_review={'conclusion':'SUSPICIOUS'},
+            approval=dict(status='live_complete',plan={'human_review_id':'review-1'}))
+        view=incident_view(incident,[])
+        self.assertEqual(view['label'],'Live block removed; access restored')
+        self.assertEqual(view['progress']['phase']['kind'],'complete')
+        self.assertEqual(view['progress']['completed'],view['progress']['total'])
+
     def test_advisory_live_requires_two_decisions_and_runs_once(self):
         self.save_suspicious_review()
         self.assertEqual(queue_reports(self.db,dict(self.policy,mode='dry_run'),IDENTITY),0)
