@@ -173,11 +173,11 @@ Verification does not authorize live response or set model readiness. Client sta
 
 **Normal dry run:** after successful evaluation, record actual model readiness in local policy. Run `python3 windows_lab.py monitor --telegram --env-file .env`. Do not claim evaluation passed when it did not.
 
-**Experimental review only:** record matching `experimental_assessment` objects in runtime and response profiles with configured `model`, timezone-aware `authorized_at`, and `mode: dry_run_human_review`. Keep policy dry run. Start with `--experimental-assessment --telegram --env-file .env`. All assessments are labelled unverified and require separate human review; response actions are disabled.
+**Experimental review only:** record matching `experimental_assessment` objects in runtime and response profiles with configured `model`, timezone-aware `authorized_at`, and `mode: dry_run_human_review`. Keep policy dry run. Start with `--experimental-assessment --telegram --env-file .env`. Assessments are labelled unverified and use selective human review. Response actions are disabled.
 
 After an explicit dashboard provider/model selection, also set `provider` and `provider_binding` in both `experimental_assessment` objects. Read the selected `provider`, `model` and `binding` from the local dashboard's `/api/experiments` response under `provider`. Back up the local profiles and stop the monitor before updating the two settings. Restart from WSL after they match. [Gemini setup](GEMINI_PROVIDER.md)
 
-New Windows SSH assessments are advisory prose and go through human review. The live mode below documents the separately guarded workflow for eligible structured assessments.
+In live mode, a saved Suspicious human review can produce a separate Telegram block request when the recorded evidence passes the live policy.
 
 **Human-approved LIVE:** obtain explicit authorization for the actual firewall scope, plus acceptance of known model limitations if unqualified. Back up profiles. Remove mutually exclusive `experimental_assessment` fields. Record matching `human_approved_live` objects in runtime/policy with configured `model`, fresh timezone-aware `authorized_at`, and `accept_unqualified_model: true`. Set policy `mode: live`, and set `live_enabled_after` and `live_rehearsal_authorized_at` to that same timestamp. Keep `model_evaluation_passed` false if evaluation failed. Current provisioning hashes, address restrictions, protected management, 60-second duration and 600-second approval expiry must still pass.
 
@@ -187,7 +187,7 @@ After that specific scope is authorized, start:
 python3 windows_lab.py monitor --human-approved-live --telegram --env-file .env
 ```
 
-Activation is not approval for any block. A fresh post-activation incident needs a valid Suspicious assessment, supported `REQUEST_BLOCK_APPROVAL`, independent Python eligibility, then current Telegram `YES — Approve LIVE 60s block` or `NO — Deny block / report only`. Decisions bind operator, private chat, message, incident revision, evidence, status and expiry. No answer expires after 10 minutes with no action.
+Activation is not approval for any block. A fresh post-activation incident needs a saved Suspicious human review, independent Python eligibility, then a separate Telegram `YES — Approve LIVE 60s block` or `NO — Deny block / report only`. Decisions bind operator, private chat, message, incident revision, evidence, status and expiry. No answer expires after 10 minutes with no action.
 
 The worker revalidates before one dispatch, arms Victim rollback before deny, verifies kernel state and protected management, and checks removal and actual-source connectivity afterward. Uncertain or interrupted execution is reconciled, never blindly repeated.
 

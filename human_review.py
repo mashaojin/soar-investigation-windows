@@ -127,7 +127,7 @@ class ReviewService:
                 db.execute("UPDATE review_notifications SET status='cancelled',detail='Resolved before notification delivery' WHERE incident_id=? AND revision=? AND status='queued'",
                            (incident['incident_id'],incident['revision']))
         return dict(review_id=identifier,created_at=created,conclusion=values['conclusion'],
-            resolved=values['conclusion']!='NEEDS_MORE_EVIDENCE',note='Human conclusion saved separately. No model verdict, authorization or firewall action was changed.')
+            resolved=values['conclusion']!='NEEDS_MORE_EVIDENCE',note='Human conclusion saved separately. An eligible Suspicious review may prompt for separate live block approval.')
 
     def notify(self,values):
         if not isinstance(values,dict) or set(values)!={'incident_id','revision','snapshot_hash'}:

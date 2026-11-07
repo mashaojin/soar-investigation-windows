@@ -87,6 +87,27 @@ class HumanApprovedLiveTests(unittest.TestCase):
                 self.assertEqual(e.dispatches,1 if decision=='a' else 0)
                 self.assertFalse(run_one(f.db,f.policy,legacy.IDENTITY,e,wait=lambda _:None))
 
+    def test_reviewed_advisory_uses_windows_live_scope_and_separate_approval(self):
+        f,w=self.fixture()
+        f.save_suspicious_review(via_telegram=True)
+        self.assertEqual(queue_reports(f.db,f.policy,legacy.IDENTITY),1)
+        with sqlite3.connect(f.db) as db:
+            plan=json.loads(db.execute('SELECT plan FROM approval_requests').fetchone()[0])
+        self.assertEqual(plan['transport'],'windows-ssh-helper')
+        self.assertEqual(plan['helper_config_hash'],w.policy()['windows_response']['config_hash'])
+
+        class Executor(legacy.Executor):
+            def probe(self):return dict(super().probe(),actual_source=w.source)
+            def read(self,run_id):return dict(super().read(run_id),source=w.source,destination=w.config['victim_ip'])
+
+        e=Executor()
+        self.assertFalse(run_one(f.db,f.policy,legacy.IDENTITY,e))
+        f.approve()
+        self.assertEqual(f.outcome,'approved')
+        self.assertTrue(run_one(f.db,f.policy,legacy.IDENTITY,e,wait=lambda _:None))
+        self.assertEqual(e.dispatches,1)
+        self.assertEqual(f.status(),'live_complete')
+
     def test_invalid_evidence_or_report_only_never_gets_live_plan(self):
         for case in ('partial','identity','binding','report_only','claims'):
             with self.subTest(case=case):

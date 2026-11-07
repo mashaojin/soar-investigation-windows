@@ -76,6 +76,69 @@ class ContinuousResponseTests(unittest.TestCase):
     def status(self):
         with sqlite3.connect(self.db) as db: return db.execute('SELECT status FROM approval_requests').fetchone()[0]
 
+    def save_suspicious_review(self, *, via_telegram=False):
+        from human_review import ReviewService, attach, load_incident
+        from provider_state import effective, stamp
+        self.policy['_provider_root']=str(self.root)
+        self.metadata.update(stamp(effective(self.policy)),assessment_format='advisory_text')
+        advisory=dict(format='advisory_text',reason='Assessment: Suspicious\nReview recorded SSH activity [E2].',evidence_refs=['E2'])
+        identifier='a'*64
+        service=ReviewService(self.root)
+        self.db.rename(service.path)
+        self.db=service.path
+        with closing(sqlite3.connect(self.db)) as db,db:
+            db.execute("UPDATE incidents SET incident_id=?,status='manual_review'",(identifier,))
+            db.execute("UPDATE analyses SET incident_id=?,status='manual_review',report=?,metadata=?",
+                       (identifier,json.dumps(advisory),json.dumps(self.metadata)))
+            context=attach(db,load_incident(db,identifier))['review_context']
+        self.assertEqual(queue_reports(self.db,self.policy,IDENTITY),0)
+        review=dict(incident_id=identifier,revision=1,snapshot_hash=context['snapshot_hash'])
+        if via_telegram:
+            from human_review import deliver_notifications
+            notice=service.notify(review)
+            deliver_notifications(self.db,self.policy,self.telegram,IDENTITY)
+            update={'update_id':2,'callback_query':{'data':'hr:s:'+notice['notification_id'],
+                'from':{'id':100},'message':{'message_id':42,'chat':{'id':100,'type':'private'}}}}
+            self.assertEqual(handle_update(self.db,update,IDENTITY),'review_suspicious')
+        else:
+            service.save(dict(review,expected_review_id=None,reviewer='Test operator',conclusion='SUSPICIOUS',notes=''))
+
+    def test_advisory_live_requires_two_decisions_and_runs_once(self):
+        self.save_suspicious_review()
+        self.assertEqual(queue_reports(self.db,dict(self.policy,mode='dry_run'),IDENTITY),0)
+        self.assertEqual(queue_reports(self.db,self.policy,IDENTITY),1)
+        self.assertEqual(queue_reports(self.db,self.policy,IDENTITY),0)
+        executor=Executor()
+        self.assertFalse(run_one(self.db,self.policy,IDENTITY,executor))
+        from response import message_for
+        with closing(sqlite3.connect(self.db)) as db:
+            db.row_factory=sqlite3.Row
+            row=db.execute('SELECT * FROM approval_requests').fetchone()
+        payload=message_for(row)
+        self.assertIn('Human review:',payload['text'])
+        self.assertIn('Approve LIVE 60s block',payload['reply_markup']['inline_keyboard'][0][0]['text'])
+        self.approve()
+        self.assertEqual(self.outcome,'approved')
+        self.assertTrue(run_one(self.db,self.policy,IDENTITY,executor,wait=lambda _:None))
+        self.assertFalse(run_one(self.db,self.policy,IDENTITY,executor))
+        self.assertEqual(self.status(),'live_complete')
+        self.assertEqual(executor.dispatches,1)
+
+    def test_suspicious_human_review_cannot_bypass_live_scope(self):
+        self.scoped_trust_case(False)
+        self.save_suspicious_review()
+        self.assertEqual(queue_reports(self.db,self.policy,IDENTITY),0)
+
+    def test_reviewed_request_stops_when_incident_evidence_changes(self):
+        self.save_suspicious_review()
+        self.approve()
+        self.assertEqual(self.outcome,'approved')
+        with closing(sqlite3.connect(self.db)) as db,db:
+            db.execute('UPDATE incidents SET alert_count=alert_count+1')
+        executor=Executor()
+        self.assertFalse(run_one(self.db,self.policy,IDENTITY,executor))
+        self.assertEqual(executor.dispatches,0)
+
     def test_live_success_is_single_dispatch_with_rollback_and_recovery(self):
         self.approve(); executor=Executor()
         self.assertTrue(run_one(self.db,self.policy,IDENTITY,executor,wait=lambda _:None))

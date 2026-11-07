@@ -9,7 +9,7 @@ This repository is the dedicated Windows (WSL2/Hyper-V) implementation of [soar-
 
 **Suricata → Python correlation and SSH evidence → one bounded Ollama or Gemini assessment → report only or operator review.**
 
-The model explains the incident, cites evidence and suggests a next step in plain language. Python supplies the recorded facts and checks the report's length and cited IDs. The operator records a separate conclusion. The guarded firewall workflow remains available for eligible structured assessments. Advisory reports cannot create block requests.
+The model explains the incident, cites evidence and suggests a next step in plain language. Python supplies the recorded facts and checks the report's length and cited IDs. The operator records a separate conclusion. A saved Suspicious human review can lead to a separate Telegram approval in live mode if the evidence and lab policy permit it.
 
 > **Windows status:** local Ollama and optional Gemini API routing are implemented. The models can misinterpret recorded evidence, so review the report alongside the underlying facts. Manual firewall enforcement and automatic rollback were verified separately. See [verification limits](#verification-status).
 
@@ -42,6 +42,8 @@ flowchart TD
     H -->|Valid Benign label| I[Report only and optional dashboard review]
     H -->|Suspicious, inconclusive, missing label or error| J[Dashboard and Telegram review]
     J --> K[Record human conclusion]
+    K -->|Suspicious and live policy passes| L[Separate Telegram block approval]
+    L -->|YES| M[Guarded 60-second SSH block and rollback]
 ```
 
 ### Responsibilities
@@ -270,9 +272,13 @@ Python waits for the complete correlation/plan evidence window plus arrival marg
 
 ## Telegram decisions
 
-### Response approval
+1. Review the evidence and record **Suspicious** in the dashboard or Telegram. This saves your conclusion.
+2. In live mode, the monitor checks the current revision and retained SSH evidence against the response policy. If eligible, Telegram sends a **separate** request with **YES — Approve LIVE 60s block** and **NO — Deny block / report only**.
+3. Only **YES** on the current request can dispatch the guarded block. **NO** or expiry leaves the incident report and human conclusion in place. The dashboard tracks the response and rollback.
 
-This section describes the guarded structured-assessment workflow. New Windows SSH prose reports follow the selective routing above. A recommendation to block cannot create a firewall request.
+Use [Windows live-mode setup](docs/WINDOWS.md#8-select-an-explicit-assessmentresponse-mode) before rehearsing live enforcement. Dry run and Windows experimental review-only mode do not send the new live button. Live eligibility still requires a fresh post-activation incident, a matching assessment provider, an allowlisted source, sufficient retained SSH evidence, and no successful logins. Activity covered by an approved plan remains report only unless the records verify an account-scope violation.
+
+This section describes the guarded structured-assessment workflow. New Windows SSH prose reports follow the selective routing above. The operator must record a Suspicious conclusion before a live request can be offered.
 
 An eligible Suspicious assessment with a supported block recommendation can ask:
 
@@ -290,7 +296,7 @@ sequenceDiagram
     participant T as Telegram handler
     participant P as Python live worker
     participant V as Victim helper
-    O->>T: YES on current incident-bound request
+    O->>T: YES on separate incident-bound live request
     T->>P: Record exact authorized decision
     P->>P: Revalidate facts, scope, identity, expiry and revision
     P->>V: One fixed apply operation
@@ -332,7 +338,7 @@ After a guest reboot, reverify DHCP addresses, routes and host-key identity. Cha
 | Plain-language Ollama report | Exercised against a synthetic fixture and lab evidence. Recorded examples include factual errors. |
 | Three manual scenario/review workflows | Verified |
 | Real manual helper deny, protected management and automatic rollback | Verified; approximately 60.43 seconds |
-| Valid assessment → actual Telegram YES → live-worker enforcement | **Not yet verified**; recent Gemma3 outputs failed validation |
+| Suspicious review → separate Telegram YES → live worker | Verified offline with simulated Telegram and firewall execution. The new path still needs an on-VM rehearsal. |
 | Reliable security judgment | **Not established** |
 
 ### Reproduce software checks
@@ -365,7 +371,7 @@ Candidates can override model, thread count or instruction file for evaluation o
 | WSL cannot reach Windows Ollama | Configured Windows loopback stdio transport; WSL localhost is not assumed equivalent |
 | Telegram messages absent | Locally configured bot/chat identity, exclusive polling and current handler health; never expose the token |
 | Root attempt not shown | Actual scoped Victim journal, account counts, time window and SSH protections, not client output alone |
-| No live buttons on an advisory report | Use the Telegram review choices to record a human conclusion |
+| No live button after Suspicious review | Check live activation, source allowlist, evidence coverage, incident age and current provider binding |
 | Monitor stops after a provider switch | Match the provider/model binding in both review settings and restart in WSL |
 | Gemini report unavailable | Check local key, authorization scope, selected model version and Google project quota |
 | Block request rejected | Current operator/message/revision/evidence/status/expiry bindings; create no historical approval shortcuts |

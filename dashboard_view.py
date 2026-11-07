@@ -101,7 +101,11 @@ def incident_view(incident,plans,now=None,plan_error=None,lab=None):
             'live_preparing':'Preparing approved live response','live_executing':'Applying / verifying live response',
             'live_blocked':'SSH block applied; rollback pending','live_complete':'Live block removed; access restored',
             'live_failed':'Live response verification failed','live_recovery_required':'Live response needs operator review'}
-    if resolved:
+    reviewed_response=resolved and bool((approval.get('plan') or {}).get('human_review_id'))
+    if reviewed_response and response in labels:
+        code,label=response,labels[response]
+        if code in ('queued','sending'): code='telegram_'+code
+    elif resolved:
         code,label='human_resolved','Resolved by human review'
     elif human and human['conclusion']=='NEEDS_MORE_EVIDENCE':
         code,label='manual_review','Awaiting more evidence'
@@ -151,7 +155,7 @@ def incident_view(incident,plans,now=None,plan_error=None,lab=None):
             {'label':final_label,'state':final_state}]
     if analysis=='manual_review' or human:
         stages.insert(3,{'label':'Human review','state':'done' if resolved else 'attention'})
-    if resolved:
+    if resolved and not reviewed_response:
         stages[1]['state']='done' if incident.get('metadata',{}).get('assessment_data') or len(traces)>=2 else 'skipped'
         if stages[1]['state']=='skipped': stages[1]['label']='Evidence unavailable'
         stages[2]={'label':'AI assessment' if report else 'No AI verdict','state':'done' if report else 'skipped'}
@@ -173,9 +177,9 @@ def incident_view(incident,plans,now=None,plan_error=None,lab=None):
             phase={'kind':'determinate','label':'Temporary block timer — removal still requires verification',
                    'start':datetime.fromtimestamp(due-60,timezone.utc).isoformat(),
                    'end':datetime.fromtimestamp(due,timezone.utc).isoformat()}
-    if completed==len(stages) or analysis=='manual_review' or response in ('live_failed','live_recovery_required','policy_rejected'):
+    if completed==len(stages) or (analysis=='manual_review' and not reviewed_response) or response in ('live_failed','live_recovery_required','policy_rejected'):
         phase={'kind':'paused' if completed<len(stages) else 'complete','label':label}
-    return {'status':code,'label':label,'ai_verdict':ai_verdict,'workflow_attention':code=='manual_review','human_resolved':resolved,'detail':details['human_resolved'] if resolved else incident.get('error') or details.get(code,''),
+    return {'status':code,'label':label,'ai_verdict':ai_verdict,'workflow_attention':code=='manual_review','human_resolved':resolved,'detail':details['human_resolved'] if resolved and not reviewed_response else incident.get('error') or details.get(code,''),
             'waiting_until':deadline.isoformat() if deadline and code in ('waiting','queued','investigating') else None,
             'authorization':auth,'stages':stages,'response_approval_required':decision_required,
             'progress':{'completed':completed,'total':len(stages),'phase':phase}}

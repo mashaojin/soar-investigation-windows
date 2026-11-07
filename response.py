@@ -118,6 +118,40 @@ def bound_plan(evidence, report, metadata, policy, now):
     return plan
 
 
+def reviewed_live_plan(incident, policy, now):
+    """Bind a live request to a saved human conclusion and the collected SSH evidence."""
+    from live_response import validate_live_evidence
+    report=incident['report']
+    review=incident['human_review']
+    if (policy['mode']!='live' or incident['status']!='manual_review'
+            or incident['analysis_status']!='manual_review'
+            or not report or report.get('format')!=ADVISORY_FORMAT
+            or not review or review['conclusion']!='SUSPICIOUS'):
+        raise ValueError('A current Suspicious human review is required')
+    evidence,metadata=incident['evidence'],incident['metadata']
+    plan=plan_for(evidence,policy)
+    validate_live_evidence(evidence,report,metadata,policy,now,reviewed=True)
+    plan.update(human_review_id=review['review_id'], assessment_hash=review['snapshot_hash'],
+                live_enabled_after=policy['live_enabled_after'])
+    return plan
+
+
+def current_live_plan(db, row, policy, now):
+    if json.loads(row['plan'] or '{}').get('human_review_id'):
+        from human_review import attach, load_incident
+        incident=attach(db,load_incident(db,row['incident_id']))
+        if incident['revision']!=row['revision'] or incident['report']!=json.loads(row['report']):
+            raise ValueError('Incident or report changed')
+        return reviewed_live_plan(incident,policy,now)
+    current=db.execute('''SELECT i.evidence,a.report,a.metadata FROM incidents i JOIN analyses a
+        ON a.incident_id=i.incident_id AND a.revision=i.revision
+        WHERE i.incident_id=? AND i.revision=? AND i.status='complete' AND a.status='complete' ''',
+        (row['incident_id'],row['revision'])).fetchone()
+    if not current or current[1]!=row['report']:
+        raise ValueError('Incident or report changed')
+    return bound_plan(json.loads(current[0]),json.loads(current[1]),json.loads(current[2]),policy,now)
+
+
 def evidence_context(metadata, evidence):
     """Snapshot facts from successful scoped tools, never from model prose."""
     context={'source_ip':evidence.get('source_ip'), 'target_ip':evidence.get('destination_ip'),
@@ -159,6 +193,7 @@ def evidence_context(metadata, evidence):
 
 def queue_reports(db_path, policy, identity, *, now=None):
     now = int(time.time()) if now is None else now
+    policy={'_provider_root':str(Path(db_path).resolve().parent), **policy}
     if policy["mode"] not in ('dry_run','live'):
         raise ValueError("Unsupported response mode")
     ttl = policy["approval_ttl_seconds"]
@@ -173,25 +208,43 @@ def queue_reports(db_path, policy, identity, *, now=None):
                 db.execute("UPDATE approval_requests SET status='stale',status_notified='' WHERE request_id=?",(request,))
                 audit(db,request,'stale','Response mode or activation changed; a new incident-bound approval is required',now)
         metadata='a.metadata' if any(r[1]=='metadata' for r in db.execute('PRAGMA table_info(analyses)')) else 'NULL'
+        has_reviews=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='human_reviews'").fetchone()
+        reviewed_candidates = (
+            " OR (i.status='manual_review' AND a.status='manual_review' "
+            "AND json_extract(a.report,'$.format')='advisory_text' "
+            "AND EXISTS (SELECT 1 FROM human_reviews h WHERE h.incident_id=i.incident_id "
+            "AND h.revision=i.revision AND h.conclusion='SUSPICIOUS'))"
+            if has_reviews and policy['mode']=='live' else ''
+        )
         rows = db.execute("""SELECT i.incident_id,i.revision,i.evidence,a.report,"""+metadata+"""
             FROM incidents i JOIN analyses a ON a.incident_id=i.incident_id AND a.revision=i.revision
             LEFT JOIN approval_requests r ON r.incident_id=i.incident_id AND r.revision=i.revision
-            WHERE ((a.status='complete' AND i.status='complete') OR
+            WHERE ((((a.status='complete' AND i.status='complete') OR
                    (a.status='manual_review' AND i.status='manual_review' AND a.report IS NOT NULL
                     AND json_extract("""+metadata+""",'$.assessment_version')=?))
             AND (json_extract(a.report,'$.format') IS NOT 'advisory_text' OR a.status='complete')
+            )"""+reviewed_candidates+""")
             AND r.request_id IS NULL""",(VERSION,)).fetchall()
         queued = 0
         for incident, revision, evidence, report, metadata in rows:
             parsed=json.loads(report)
             advisory_only = parsed.get('format') == ADVISORY_FORMAT
-            if advisory_only and assessment_label(parsed) != 'BENIGN': continue
-            if not advisory_only and db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='human_reviews'").fetchone():
+            plan = None
+            if advisory_only and has_reviews and policy['mode']=='live':
+                from human_review import attach,load_incident
+                saved=attach(db,load_incident(db,incident))
+                if saved['analysis_status']=='manual_review':
+                    try:
+                        plan=reviewed_live_plan(saved,policy,now)
+                    except (ValueError, KeyError, TypeError):
+                        continue
+            if advisory_only and plan is None and assessment_label(parsed) != 'BENIGN':
+                continue
+            if not advisory_only and has_reviews:
                 from human_review import attach,load_incident
                 reviewed=attach(db,load_incident(db,incident))['human_review']
                 if reviewed and reviewed['conclusion']!='NEEDS_MORE_EVIDENCE': continue
             request_id = secrets.token_hex(12)
-            plan = None
             wants_response=parsed.get('assessment_version')!=VERSION or parsed.get('recommended_action')=='REQUEST_BLOCK_APPROVAL'
             if not advisory_only and parsed["verdict"] == "SUSPICIOUS" and wants_response and json.loads(evidence).get("scenario") != "dvwa_sqli":
                 try:
@@ -215,6 +268,8 @@ def refresh_requests(db, now):
         (SELECT 1 FROM incidents i JOIN analyses a ON a.incident_id=i.incident_id AND a.revision=i.revision
          WHERE i.incident_id=approval_requests.incident_id AND i.revision=approval_requests.revision
          AND ((approval_requests.plan IS NOT NULL AND a.status='complete' AND i.status='complete')
+              OR (json_extract(approval_requests.plan,'$.human_review_id') IS NOT NULL
+                  AND a.status='manual_review' AND i.status='manual_review' AND a.report=approval_requests.report)
               OR (approval_requests.plan IS NULL AND a.report IS NOT NULL AND a.status IN ('complete','manual_review')
                   AND i.status IN ('complete','manual_review'))))""").fetchall()
     for (request,) in stale:
@@ -236,6 +291,8 @@ def message_for(row):
     experimental=json.loads(row.get('context') or '{}').get('model_qualification')=='experimental_unverified'
     report = present_report(json.loads(row["report"]))
     if report.get('format') == ADVISORY_FORMAT:
+        if row['plan']:
+            return ssh_action_message(row,report)
         prose = report['reason']
         return dict(chat_id=row['chat_id'], text='🟢 AI assessment: Benign — Report only\n'
                     +incident_header(row)+'No decision required.\n\n'
@@ -322,7 +379,9 @@ def ssh_action_message(row,report):
         text+='Failed accounts: '+escape(', '.join(f'{k}: {v}' for k,v in context['failed_accounts'].items()))+'\n'
     if context.get('model_qualification')=='operator_accepted_unqualified':
         text+='Model quality unqualified — operator accepted; verify the evidence before approving.\n'
-    text+=(f'AI assessment: <b>{escape(verdict_display(report["verdict"]))}</b>\n\n'
+    verdict_line=('Human review: <b>🔴 Suspicious</b>' if plan.get('human_review_id')
+                  else f'AI assessment: <b>{escape(verdict_display(report["verdict"]))}</b>')
+    text+=(verdict_line+'\n\n'
            f'<b>Do you authorize blocking this source from accessing the victim’s SSH service for {duration}?</b>\n\n'
            + ('<b>LIVE FIREWALL ACTION — approval will automatically apply a real 60-second SSH block. Ubuntu arms rollback before applying the deny. Keep the victim running.</b>\n' if live else '<b>DRY RUN — approval records a simulation only. No firewall rules will change.</b>\n') +
            f'Incident: <code>{escape(incident_display(dict(row)))}</code> / revision {row["revision"]}\n'
@@ -547,7 +606,7 @@ def tick(db_path, policy, client, identity):
         if query.get("id"):
             try:
                 client.call("answerCallbackQuery", {"callback_query_id": query["id"],
-                    "text": {"approved":"YES recorded — see the incident response status", "denied":"NO recorded — report only", "review_benign":"Benign review saved — no firewall action", "review_suspicious":"Suspicious review saved — no firewall action", "review_needs_more_evidence":"More evidence needed — case remains open", "review_changed":"Incident or review changed — use dashboard", "review_expired":"Review buttons expired — use dashboard", "review_unavailable":"Review already recorded — see dashboard", "live_block_denied":"Block denied — report only. Human conclusion unchanged.", "live_block_unavailable":"Live block unavailable: review-only mode. Separate live setup and authorization required."}.get(outcome,"Request unavailable or invalid")})
+                    "text": {"approved":"YES recorded — see the incident response status", "denied":"NO recorded — report only", "review_benign":"Benign review saved — no firewall action", "review_suspicious":"Suspicious review saved — live block needs separate approval", "review_needs_more_evidence":"More evidence needed — case remains open", "review_changed":"Incident or review changed — use dashboard", "review_expired":"Review buttons expired — use dashboard", "review_unavailable":"Review already recorded — see dashboard", "live_block_denied":"Block denied — report only. Human conclusion unchanged.", "live_block_unavailable":"Live block unavailable: review-only mode. Separate live setup and authorization required."}.get(outcome,"Request unavailable or invalid")})
             except TelegramError:
                 pass
     actions = execute_dry_run(db_path, policy) if policy['mode']=='dry_run' else 0
