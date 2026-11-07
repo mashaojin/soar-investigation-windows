@@ -2,7 +2,7 @@
 
 Ollama remains the default. Gemini uses Google's fixed HTTPS API endpoint; there is no automatic fallback. The provider adapter is independent of the VM platform. The original Mac repository is unchanged.
 
-In the dashboard, open **Settings → Pipeline configuration → Assessment provider and model**. Select **Gemini API**, review the explicit model ID and expected returned version, and activate the selection. The initial suggested model is `gemini-2.5-flash-lite`; availability and quota depend on the API project. Selection alone makes no API request and does not grant evidence-upload consent or firewall authorization.
+In the dashboard, open **Settings → AI model selection → Assessment provider and model**. Select **Gemini API**, review the explicit model ID and expected returned version, and activate the selection. The initial suggested model is `gemini-2.5-flash-lite`; availability and quota depend on the API project. Selection alone makes no API request and does not grant evidence-upload consent or firewall authorization.
 
 Save `GEMINI_API_KEY='your-key'` in the ignored `.env.gemini` file beside the Python entry points, or set the environment variable locally. Never enter a key in the dashboard, commit it or send it in chat. Both legacy and newer authentication-key formats are accepted; whitespace and header injection are rejected.
 

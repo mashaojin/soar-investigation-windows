@@ -158,7 +158,7 @@ After the relevant prerequisites and assessment-mode authorization are complete,
 
 ### 4. Select a provider and prompt
 
-Open **Settings → Pipeline configuration → Assessment provider and model**. Select **Ollama** with an installed model such as `gemma3:1b`, or **Gemini API** with an explicit model ID and returned version such as `gemini-2.5-flash-lite`. Activate the selection. For dry-run human review, update the matching provider, model and binding in the local runtime and response settings before restarting the monitor. See [Gemini setup and authorization](docs/GEMINI_PROVIDER.md).
+Open **Settings → AI model selection → Assessment provider and model**. Select **Ollama** with an installed model such as `gemma3:1b`, or **Gemini API** with an explicit model ID and returned version such as `gemini-2.5-flash-lite`. Activate the selection. For dry-run human review, update the matching provider, model and binding in the local runtime and response settings before restarting the monitor. See [Gemini setup and authorization](docs/GEMINI_PROVIDER.md).
 
 In **Settings → AI prompt**, save and activate the [example plain-language SSH prompt](prompts/windows-ssh-advisory.txt) to reproduce the verdict line, scope analysis and citation format. Prompt versions apply to new requests. Both providers use the same active investigation guidance.
 
@@ -202,7 +202,7 @@ Comparisons collect no new logs, send no Telegram messages and perform no firewa
 
 ### Read configuration and complete human review
 
-**Settings → Pipeline configuration** lets you select the assessment provider and model. The tables below the selector explain grouping, evidence scope and token limits. Start or restart the monitor separately from WSL.
+**Settings → AI model selection** lets you select the assessment provider and model. The tables below the selector explain grouping, evidence scope and token limits. Start or restart the monitor separately from WSL.
 
 For an incident awaiting review, inspect its evidence, then use **Human review → Reviewer name → Your conclusion → optional Review notes → Save human review**. Benign/Suspicious resolves the human review; Need more evidence keeps it open. **Review history** retains older entries, and **Add follow-up review** records a new conclusion. Human review never overwrites the AI assessment or approves a firewall block. See [human review](docs/DASHBOARD.md#7-record-a-human-review).
 
@@ -340,7 +340,7 @@ git diff --check
 
 GitHub Actions runs the offline tests, publication audit and JavaScript syntax checks. It does not run guest traffic, model evaluation, Telegram or live firewall enforcement.
 
-For a plain-language synthetic check use **Settings → Pipeline configuration → Test with synthetic evidence only**. The scripts below reproduce the earlier structured-output evaluation:
+For a plain-language synthetic check use **Settings → AI model selection → Test with synthetic evidence only**. The scripts below reproduce the earlier structured-output evaluation:
 
 ```sh
 python3 verify_gemma.py --output verification-model-base.json

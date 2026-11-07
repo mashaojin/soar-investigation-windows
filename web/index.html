@@ -58,7 +58,7 @@
 <dialog id="experiment-drawer" aria-labelledby="experiment-title">
 <div class="drawer-heading"><div><p class="eyebrow">Controlled experiments</p><h2 id="experiment-title">Rules, prompts and evidence</h2></div><button id="close-experiments">Close</button></div>
 <div class="drawer-content"><p class="muted">Rules decide what alerts. Python decides what evidence is supplied. The configured model interprets that evidence. Change one variable at a time.</p>
-<div class="experiment-tabs" role="tablist" aria-label="Experiment panels"><button role="tab" aria-selected="true" id="tab-prompt">AI prompt</button><button role="tab" aria-selected="false" id="tab-rules">Suricata rule</button><button role="tab" aria-selected="false" id="tab-python">Pipeline configuration</button></div>
+<div class="experiment-tabs" role="tablist" aria-label="Experiment panels"><button role="tab" aria-selected="true" id="tab-prompt">AI prompt</button><button role="tab" aria-selected="false" id="tab-rules">Suricata rule</button><button role="tab" aria-selected="false" id="tab-python">AI model selection</button></div>
 <p id="experiment-message" role="status" aria-live="polite"></p>
 <section id="pane-prompt" role="tabpanel" aria-labelledby="tab-prompt">
 <h3>Versioned instruction</h3><p id="active-prompt" class="muted small"></p>
@@ -88,6 +88,6 @@
 <p class="muted small">Selection affects future assessments and invalidates pending response approvals. It does not grant cloud-evidence consent, confirm API allowance or authorize a live block. A model/provider change requires fresh response authorization. Keys stay in a local environment or ignored .env.gemini file, never in this form. No automatic cloud fallback.</p>
 <div class="formactions"><button id="check-provider">Test with synthetic evidence only</button><button id="activate-provider" class="primary">Activate provider/model</button></div>
 <pre id="provider-check-result" class="muted small" aria-live="polite"></pre>
-<h3>Pipeline configuration</h3><p class="muted">Read only · Evidence collection and response policy are independent of the model provider.</p><div id="python-settings"></div><h3>Model and token limits</h3><div id="model-settings"></div><p class="muted small">Saved-evidence comparisons contain real incident evidence and require separate cloud consent when Gemini is selected. Synthetic connection tests never use saved incidents. A new rule needs a fresh manual rehearsal.</p></section>
+<h3>Evidence collection and response</h3><p class="muted">Read only · Evidence collection and response policy are independent of the model provider.</p><div id="python-settings"></div><h3>Model and token limits</h3><div id="model-settings"></div><p class="muted small">Saved-evidence comparisons contain real incident evidence and require separate cloud consent when Gemini is selected. Synthetic connection tests never use saved incidents. A new rule needs a fresh manual rehearsal.</p></section>
 </div></dialog>
 </body></html>

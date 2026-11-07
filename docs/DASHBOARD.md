@@ -11,7 +11,7 @@ Inside the initialized WSL checkout, start `python3 windows_lab.py dashboard` an
 - [View and repeat existing plans](#3-view-and-repeat-existing-plans)
 - [Read, validate and apply a Suricata rule](#4-read-validate-and-apply-a-suricata-rule)
 - [Save, compare and activate a prompt](#5-save-compare-and-activate-a-prompt)
-- [Read pipeline configuration](#6-read-pipeline-configuration)
+- [Select an AI model](#6-select-an-ai-model)
 - [Record a human review](#7-record-a-human-review)
 - [Know when changes take effect](#8-know-when-changes-take-effect)
 - [Repeat an experiment and troubleshoot](#9-repeat-an-experiment-and-troubleshoot)
@@ -166,9 +166,9 @@ The selector requires complete saved SSH evidence and reconstructable original p
 
 A “current active version changed” conflict means another activation occurred: refresh the saved state, review the current active record and deliberately select the desired version. Preserve unsaved text before refreshing a failed page.
 
-## 6. Read pipeline configuration
+## 6. Select an AI model
 
-Open **Settings → Pipeline configuration**. The provider selector lets you activate Ollama or Gemini and test a candidate with fixed synthetic evidence. The pipeline configuration tables are read only. [Gemini setup and evidence-sharing controls](GEMINI_PROVIDER.md)
+Open **Settings → AI model selection**. The provider selector lets you activate Ollama or Gemini and test a candidate with fixed synthetic evidence. The pipeline configuration tables are read only. [Gemini setup and evidence-sharing controls](GEMINI_PROVIDER.md)
 
 | Item | Why it matters |
 | --- | --- |
