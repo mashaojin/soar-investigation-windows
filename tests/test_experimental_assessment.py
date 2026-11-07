@@ -43,8 +43,18 @@ class ExperimentalTests(unittest.TestCase):
         self.assertEqual(qualification({}),{})
 
     def test_advisory_prose_is_retained_but_cannot_queue_block_approval(self):
+        cases = (
+            ('Assessment: Suspicious\nNext step: ask about blocking the source [E2, P1].', 'manual_review', 0),
+            ('Assessment: Benign\nThe recorded activity is expected [E2, P1].', 'complete', 1),
+            ('Assessment: Insufficient evidence\nCheck the retained logs [E2, P1].', 'manual_review', 0),
+            ('Unrecognized first line [E2, P1].\nAssessment: Benign', 'manual_review', 0),
+        )
+        for answer, status, notifications in cases:
+            with self.subTest(answer=answer):
+                self.check_advisory_routing(answer,status,notifications)
+
+    def check_advisory_routing(self,answer,status,notifications):
         evidence,investigation=job('unapproved_activity')
-        answer='Suspicious activity [E2, P1]. Next step: ask about blocking the source.'
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'state.sqlite3'
             with closing(sqlite3.connect(path)) as db,db:
@@ -56,13 +66,15 @@ class ExperimentalTests(unittest.TestCase):
                 runner=MagicMock(return_value={'text':answer,'model_qualification':'qualified'})
                 first=analyze_next(path,value,now=datetime(2030,1,1,tzinfo=timezone.utc),runner=runner)
                 second=analyze_next(path,value,now=datetime(2030,1,1,tzinfo=timezone.utc),runner=runner)
-            self.assertEqual(first['status'],'manual_review');self.assertEqual(second['status'],'idle');self.assertEqual(runner.call_count,1)
+            self.assertEqual(first['status'],status);self.assertEqual(second['status'],'idle');self.assertEqual(runner.call_count,1)
             with closing(sqlite3.connect(path)) as db:
                 saved,metadata=db.execute('SELECT report,metadata FROM analyses').fetchone()
             self.assertEqual(json.loads(saved),dict(format='advisory_text',reason=answer,evidence_refs=['E2','P1']))
             self.assertEqual(json.loads(metadata)['model_qualification'],'experimental_unverified')
             import test_continuous_response as legacy
-            self.assertEqual(queue_reports(path,dict(mode='dry_run',approval_ttl_seconds=600),legacy.IDENTITY),0)
+            self.assertEqual(queue_reports(path,dict(mode='dry_run',approval_ttl_seconds=600),legacy.IDENTITY),notifications)
+            with closing(sqlite3.connect(path)) as db:
+                self.assertEqual(db.execute('SELECT count(*) FROM approval_requests WHERE plan IS NOT NULL').fetchone()[0],0)
 
     def test_advisory_checks_length_and_citation_membership(self):
         from advisory_report import validate

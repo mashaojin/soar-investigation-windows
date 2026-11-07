@@ -125,7 +125,7 @@ def analyze_next(db_path, settings, *, now=None, runner=provider_report):
             _, investigation = prepare_live_job(incident_id, evidence, settings["approved_plans"],**profile_args)
             settings["investigation"] = investigation
         payload = assessment_payload(evidence, investigation)
-        from advisory_report import FORMAT as ADVISORY_FORMAT, validate as validate_advisory
+        from advisory_report import FORMAT as ADVISORY_FORMAT, assessment_label, validate as validate_advisory
         advisory = (isinstance(settings.get('lab_profile'), dict)
                     and settings['lab_profile'].get('platform') == 'windows-hyperv'
                     and evidence.get('signature_id') == 9001001)
@@ -178,8 +178,11 @@ def analyze_next(db_path, settings, *, now=None, runner=provider_report):
             metadata = json.dumps(dict(json.loads(metadata),
                                        rejected_output=str(envelope.get("text", ""))[:4096]))
             raise
-        status = "manual_review" if advisory or validated["verdict"] == "INSUFFICIENT_EVIDENCE" or validated.get('recommended_action')=='REQUEST_MORE_EVIDENCE' else "complete"
-        if experiment:status='manual_review'
+        if advisory:
+            status = "complete" if assessment_label(validated) == 'BENIGN' else "manual_review"
+        else:
+            status = "manual_review" if validated["verdict"] == "INSUFFICIENT_EVIDENCE" or validated.get('recommended_action')=='REQUEST_MORE_EVIDENCE' else "complete"
+            if experiment:status='manual_review'
     except (ValueError, KeyError, TypeError, OSError, RuntimeError, subprocess.SubprocessError, http.client.HTTPException) as exc:
         error = ("Manual review required. No automatic retry. " + type(exc).__name__ + ": " + str(exc))[:3500]
     with closing(sqlite3.connect(db_path)) as db, db:

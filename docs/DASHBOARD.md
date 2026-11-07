@@ -187,6 +187,8 @@ Changing a prompt does not change these controls. Changing source constants or p
 
 ## 7. Record a human review
 
+Benign advisory assessments appear as **Report only**. Use **Human review** for an optional dashboard review. Suspicious or inconclusive assessments, unrecognized labels and assessment errors request a human conclusion through the dashboard or Telegram. Telegram report-only messages have no decision buttons.
+
 ![Shared assessment layout illustrated by a historical Mac/UTM incident](images/incident-assessment.jpg)
 
 *The screenshot is a Mac/Gemma4 example. It does not qualify the configured Windows model or establish a Windows Telegram-to-worker live result.*

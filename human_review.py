@@ -1,4 +1,5 @@
 """Append-only operator conclusions; no inference or firewall execution."""
+from advisory_report import FORMAT as ADVISORY_FORMAT, assessment_label, is_report_only
 from contextlib import closing
 from datetime import datetime,timezone
 import hashlib
@@ -77,16 +78,18 @@ def attach(db,incident,tables=None):
     for r in history: r['applies_to_current_snapshot']=r['revision']==incident['revision'] and r['snapshot_hash']==digest
     incident['human_review']=current
     incident['human_review_history']=history
-    incident['review_context']=dict(can_review=incident.get('analysis_status')=='manual_review',snapshot_hash=digest,
+    report_only=is_report_only(incident.get('analysis_status'),incident.get('report'))
+    incident['review_context']=dict(can_review=incident.get('analysis_status')=='manual_review' or report_only,
+        review_optional=report_only,snapshot_hash=digest,
         expected_review_id=current_rows[0]['review_id'] if current_rows else None,
         notification=notice,conclusions=CONCLUSIONS)
     return incident
 
 
-def check_snapshot(incident,values):
+def check_snapshot(incident,values,*,allow_optional=False):
     if values['revision']!=incident['revision'] or values['snapshot_hash']!=binding(incident):
         raise ReviewConflict('Incident evidence or analysis changed. Refresh and review the current revision.')
-    if incident.get('analysis_status')!='manual_review':
+    if incident.get('analysis_status')!='manual_review' and not (allow_optional and incident['review_context']['review_optional']):
         raise ValueError('This revision is not awaiting human review.')
 
 
@@ -109,7 +112,7 @@ class ReviewService:
         with (closing(self.connect()) if connection is None else nullcontext(connection)) as db, (db if connection is None else nullcontext()):
             if connection is None: initialize(db);db.execute('BEGIN IMMEDIATE')
             incident=attach(db,load_incident(db,values['incident_id']))
-            check_snapshot(incident,values)
+            check_snapshot(incident,values,allow_optional=connection is None)
             if values['expected_review_id']!=incident['review_context']['expected_review_id']:
                 raise ReviewConflict('Another review was saved. Refresh before adding a follow-up review.')
             tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -152,12 +155,16 @@ def validate_identity(values):
 
 def reason_for_review(incident):
     report=incident.get('report') or {};error=incident.get('error') or ''
+    if report.get('format')==ADVISORY_FORMAT:
+        return {'SUSPICIOUS':'The AI assessment is suspicious.', 'INSUFFICIENT_EVIDENCE':'The AI assessment found insufficient evidence.'}.get(assessment_label(report),'The report needs operator review.')
     from experimental_assessment import experimental_metadata
     if report and experimental_metadata(incident.get('metadata')):return 'The AI assessment is unverified and requires an independent human conclusion.'
     if report.get('recommended_action')=='REQUEST_MORE_EVIDENCE':return 'The AI requested more evidence before a response decision.'
     if report.get('verdict')=='INSUFFICIENT_EVIDENCE':return 'The AI could not reach a conclusive assessment from the available evidence.'
     if 'No authentication outcomes' in error:return 'A network alert was detected, but no matching SSH authentication outcomes were found in the retained evidence window.'
     if 'Authorization changed' in error or 'plan changed' in error:return 'The test-plan scope changed during the investigation and needs an operator check.'
+    if 'unknown evidence ID' in error: return 'The AI report cited an ID that was not in the supplied evidence.'
+    if '4096 UTF-8 bytes' in error: return 'The AI report was empty or exceeded the text limit.'
     if 'coverage' in error.lower():return 'The available authentication evidence did not establish the required log coverage.'
     return 'The automated investigation could not finish with a valid assessment. Review the saved evidence and error details.'
 
@@ -169,7 +176,8 @@ def notification_message(incident,identity,notification_id=None):
     assessment = (report.get('reason') or '').strip()
     if assessment:
         excerpt = assessment if len(assessment) <= 600 else assessment[:600].rstrip() + '…'
-        summary = f"AI assessment:\n{excerpt}\n\n"
+        reason = f'Reason: {reason_for_review(incident)}\n' if report.get('format')==ADVISORY_FORMAT else ''
+        summary = reason + f"AI assessment:\n{excerpt}\n\n"
         heading = '🟡 Human review requested.\n'
     else:
         summary = f"Reason: {reason_for_review(incident)}\n"

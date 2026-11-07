@@ -27,7 +27,8 @@ class HumanApprovedLiveTests(unittest.TestCase):
         def wsl_read(path,*args,**kwargs):
             if str(path)=='/proc/sys/kernel/osrelease':return 'synthetic-microsoft-wsl2'
             return original_read(path,*args,**kwargs)
-        # The launcher test runs on generic Linux CI, not an actual WSL host.
+        # The launcher test simulates WSL on both the development host and Linux CI.
+        platform=patch.object(windows_lab.sys,'platform','linux');platform.start();self.addCleanup(platform.stop)
         host=patch.object(Path,'read_text',wsl_read);host.start();self.addCleanup(host.stop)
         for flags in ([],['--human-approved-live'],['--human-approved-live','--telegram','--collection-only']):
             with patch('sys.argv',base+flags),self.assertRaises(SystemExit):windows_lab.main()

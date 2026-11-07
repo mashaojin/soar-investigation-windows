@@ -14,7 +14,7 @@ from unittest.mock import patch
 from human_review import ReviewService,ReviewConflict,attach,load_incident,initialize,deliver_notifications,notification_message
 from dashboard import make_server,snapshot
 from dashboard_view import incident_view
-from response import queue_reports,message_for
+from response import deliver_one,queue_reports,message_for
 from telegram_client import TelegramError
 
 IDENT='a'*64
@@ -48,6 +48,47 @@ class ReviewFixture:
 
 class HumanReviewTests(ReviewFixture,unittest.TestCase):
     def setUp(self):self.setup_fixture()
+
+    def save_advisory(self, status, text):
+        report = dict(format='advisory_text', reason=text, evidence_refs=['E1'])
+        with closing(sqlite3.connect(self.path)) as db,db:
+            db.execute('UPDATE incidents SET status=?',(status,))
+            db.execute('UPDATE analyses SET status=?,report=?,error=NULL',(status,json.dumps(report)))
+
+    def test_benign_advisory_delivers_report_only_and_can_be_reviewed_on_dashboard(self):
+        self.save_advisory('complete','Assessment: Benign\nActivity is within the plan [E1].')
+        incident=self.incident()
+        self.assertTrue(incident['review_context']['review_optional'])
+        self.assertEqual(incident_view(incident,[])['label'],'Report only')
+        with self.assertRaises(ValueError):
+            self.service.notify(self.notify_values())
+        policy=dict(mode='dry_run',approval_ttl_seconds=600)
+        self.assertEqual(queue_reports(self.path,policy,self.identity,now=1000),1)
+        self.assertEqual(queue_reports(self.path,policy,self.identity,now=1000),0)
+        client=Telegram()
+        with patch.object(client,'call',wraps=client.call) as send:
+            send.side_effect=lambda method,payload: dict(message_id=42,chat={'id':1})
+            self.assertEqual(deliver_one(self.path,client,self.identity,now=1000),'sent')
+            payload=send.call_args.args[1]
+        self.assertIn('Report only',payload['text'])
+        self.assertNotIn('reply_markup',payload)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute('SELECT status,plan FROM approval_requests').fetchone(),('notified',None))
+        self.assertTrue(self.service.save(self.values('SUSPICIOUS'))['resolved'])
+        self.assertEqual(incident_view(self.incident(),[])['ai_verdict'],'BENIGN')
+
+    def test_non_benign_advisory_review_has_buttons_and_never_creates_action_request(self):
+        for text in ('Assessment: Suspicious\nConsider blocking [E1].',
+                     'Assessment: Insufficient evidence\nCheck logs [E1].',
+                     'Unclear [E1].\nAssessment: Benign'):
+            with self.subTest(text=text):
+                self.save_advisory('manual_review',text)
+                incident=self.incident()
+                self.assertFalse(incident['review_context']['review_optional'])
+                self.assertTrue(incident_view(incident,[])['workflow_attention'])
+                notice=notification_message(incident,self.identity,'1'*24)
+                self.assertEqual(sum(map(len,notice['reply_markup']['inline_keyboard'])),3)
+                self.assertEqual(queue_reports(self.path,dict(mode='dry_run',approval_ttl_seconds=600),self.identity),0)
 
     def test_save_resolves_view_without_overwriting_ai_or_action_records(self):
         before=self.incident();result=self.service.save(self.values())

@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 import re
 
+from advisory_report import FORMAT as ADVISORY_FORMAT, assessment_label, is_report_only
 from approved_plans import select_plan
 from ssh_live_investigation import incident_context
 from ssh_correlation import scope, recorded_plan, ready_at
@@ -76,7 +77,9 @@ def incident_view(incident,plans,now=None,plan_error=None,lab=None):
     approval=incident.get('approval') or {}
     response=approval.get('status')
     report=incident.get('report')
-    ai_verdict=(report or {}).get('verdict')
+    advisory=report and report.get('format')==ADVISORY_FORMAT
+    report_only=is_report_only(analysis,report)
+    ai_verdict=assessment_label(report) if advisory else (report or {}).get('verdict')
     if ai_verdict not in ('BENIGN','SUSPICIOUS','INSUFFICIENT_EVIDENCE'): ai_verdict=None
     human=incident.get('human_review')
     resolved=bool(human and human['conclusion'] in ('BENIGN','SUSPICIOUS'))
@@ -104,6 +107,8 @@ def incident_view(incident,plans,now=None,plan_error=None,lab=None):
         code,label='manual_review','Awaiting more evidence'
     elif analysis=='manual_review':
         code,label='manual_review','More evidence requested' if more_evidence else 'Manual review required'
+    elif report_only:
+        code,label='report_only','Report only'
     elif response in labels:
         code,label=response,labels[response]
         if code in ('queued','sending'): code='telegram_'+code
@@ -117,12 +122,13 @@ def incident_view(incident,plans,now=None,plan_error=None,lab=None):
              'investigating':'The worker is collecting SSH evidence or requesting a direct AI assessment. These phases are not separately recorded.',
              'waiting':'The complete evidence window must close before assessment.',
              'queued':'Waiting for the worker and collection catch-up; this page does not assert monitor health.',
+             'report_only':'AI marked this case Benign. Human review is optional.',
              'notified':'A report was delivered. No response approval was required.',
              'pending':'Use the incident-bound buttons in Telegram. Plan approval does not approve a response.',
              'dry_run_complete':'The approved response was simulated. No firewall command was executed.',
              'denied':'The report was retained and no response was executed.',
              'expired':'The request expired without response execution.'}
-    decision_required=bool(approval.get('plan')) if approval else False if analysis=='manual_review' else None
+    decision_required=bool(approval.get('plan')) if approval else False if analysis=='manual_review' or report_only else None
     decision_state='skipped' if decision_required is False else 'waiting'
     if decision_required and response in ('approved','dry_run_complete','duplicate_action','live_preparing','live_executing','live_blocked','live_complete','live_failed','live_recovery_required'): decision_state='done'
     elif decision_required and response in ('denied','expired','stale','policy_rejected'): decision_state='attention'
@@ -132,6 +138,8 @@ def incident_view(incident,plans,now=None,plan_error=None,lab=None):
                  'expired':'No action — expired','stale':'No action — invalidated',
                  'live_complete':'Block removed / verified','live_blocked':'Temporary SSH block',
                  'live_failed':'Verification failed','live_recovery_required':'Recovery needs review'}.get(response,'Delivery / response')
+    if report_only and not approval:
+        final_label,final_state='Report saved','done'
     notice=(incident.get('review_context') or {}).get('notification') or {}
     if analysis=='manual_review' and not approval:
         final_label='Review notice sent' if notice.get('status')=='sent' else 'Review notification'

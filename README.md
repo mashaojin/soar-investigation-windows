@@ -7,7 +7,7 @@
 This repository is the dedicated Windows (WSL2/Hyper-V) implementation of [soar-investigation-macOS](https://github.com/mashaojin/soar-investigation-macOS)
 , retaining upstream test compatibility without modifying the original repository.
 
-**Suricata → Python correlation and SSH evidence → one bounded Ollama or Gemini assessment → dashboard report and Telegram human review.**
+**Suricata → Python correlation and SSH evidence → one bounded Ollama or Gemini assessment → report only or operator review.**
 
 The model explains the incident, cites evidence and suggests a next step in plain language. Python supplies the recorded facts and checks the report's length and cited IDs. The operator records a separate conclusion. The guarded firewall workflow remains available for eligible structured assessments. Advisory reports cannot create block requests.
 
@@ -39,10 +39,9 @@ flowchart TD
     E --> G[One bounded Ollama or Gemini assessment]
     F --> G
     G --> H[Check report length and cited IDs]
-    H --> I[Telegram excerpt or assessment error]
-    I --> Q[Separate human conclusion]
-    C --> R[Dashboard history and live progress]
-    Q --> R
+    H -->|Valid Benign label| I[Report only and optional dashboard review]
+    H -->|Suspicious, inconclusive, missing label or error| J[Dashboard and Telegram review]
+    J --> K[Record human conclusion]
 ```
 
 ### Responsibilities
@@ -57,7 +56,15 @@ flowchart TD
 | Telegram operator | Approve/deny one exact eligible response, or record a separate human review | Reuse an expired/stale approval |
 | Victim helper | Fixed scoped deny and rollback operations | Arbitrary model-generated commands |
 
-The Windows badge shows **Benign**, **Suspicious**, or **No verdict yet**. For a prose report it uses an explicit first-line assessment such as `Assessment: Suspicious`. The prose, recorded facts, workflow status and human conclusion are shown separately.
+The model starts with a standalone plain-text line such as `Assessment: Benign`, `Assessment: Suspicious`, or `Assessment: Insufficient evidence`. Python uses the line for routing and keeps the length and citation checks. The model explains its judgment in prose.
+
+| Assessment outcome | Dashboard | Telegram |
+| --- | --- | --- |
+| Benign | **Report only** with optional human review | Brief report without buttons |
+| Suspicious | **Manual review required** | Review notice with **Benign**, **Suspicious**, and **Need more evidence** |
+| Insufficient evidence, missing or unrecognized label, or assessment error | **Manual review required** | Review notice with the reason and the same review choices |
+
+The operator can complete a requested review in either place. Review choices record a conclusion and cannot approve a firewall block. The new routing applies to future incident revisions. Existing assessments keep their recorded workflow state.
 
 ## Screenshots
 
@@ -204,7 +211,7 @@ Comparisons collect no new logs, send no Telegram messages and perform no firewa
 
 **Settings → AI model selection** lets you select the assessment provider and model. The tables below the selector explain grouping, evidence scope and token limits. Start or restart the monitor separately from WSL.
 
-For an incident awaiting review, inspect its evidence, then use **Human review → Reviewer name → Your conclusion → optional Review notes → Save human review**. Benign/Suspicious resolves the human review; Need more evidence keeps it open. **Review history** retains older entries, and **Add follow-up review** records a new conclusion. Human review never overwrites the AI assessment or approves a firewall block. See [human review](docs/DASHBOARD.md#7-record-a-human-review).
+To complete a requested review or optionally review a Benign report, inspect its evidence, then use **Human review → Reviewer name → Your conclusion → optional Review notes → Save human review**. Benign/Suspicious resolves the human review; Need more evidence keeps it open. **Review history** retains older entries, and **Add follow-up review** records a new conclusion. Human review never overwrites the AI assessment or approves a firewall block. See [human review](docs/DASHBOARD.md#7-record-a-human-review).
 
 | Change | When it takes effect |
 | --- | --- |
@@ -240,9 +247,9 @@ Start with dry-run responses and verify each stage before continuing. Run attemp
 
 | Scenario | Manual activity | Evidence-dependent interpretation | Possible Telegram path |
 | --- | --- | --- | --- |
-| Approved test | Trust-Client uses soc_test inside an approved window and limit | Benign when evidence supports the plan | Advisory report and human review |
-| Unapproved activity | Kali makes bounded SSH attempts with no matching approved plan | Suspicious if the observed context supports that conclusion; no plan alone is not proof of attack | Advisory report and human review |
-| Scope violation | Trust-Client attempts root while its plan permits only soc_test | Recorded root attempt is outside account scope; model assesses its significance | Advisory report and human review |
+| Approved test | Trust-Client uses soc_test inside an approved window and limit | Benign when evidence supports the plan | Report only when labeled Benign |
+| Unapproved activity | Kali makes bounded SSH attempts with no matching approved plan | Suspicious if the observed context supports that conclusion; no plan alone is not proof of attack | Review notice if Suspicious or inconclusive |
+| Scope violation | Trust-Client attempts root while its plan permits only soc_test | Recorded root attempt is outside account scope; model assesses its significance | Review notice if Suspicious or inconclusive |
 
 Create a plan on the dashboard with **New test plan → Validate → Approve plan**. Review source, target, permitted account, failure limit and future window. Test-plan approval is separate from response approval.
 
@@ -265,7 +272,7 @@ Python waits for the complete correlation/plan evidence window plus arrival marg
 
 ### Response approval
 
-This section describes the guarded structured-assessment workflow. New Windows SSH prose reports follow the human-review path below, including when the prose recommends a block.
+This section describes the guarded structured-assessment workflow. New Windows SSH prose reports follow the selective routing above. A recommendation to block cannot create a firewall request.
 
 An eligible Suspicious assessment with a supported block recommendation can ask:
 

@@ -16,6 +16,7 @@ import time
 from telegram_client import TelegramClient, TelegramError, bot_lock, load_credentials
 from assessment_facts import VERSION
 from report_language import present_report
+from advisory_report import FORMAT as ADVISORY_FORMAT, assessment_label
 
 
 def canonical(value):
@@ -178,19 +179,21 @@ def queue_reports(db_path, policy, identity, *, now=None):
             WHERE ((a.status='complete' AND i.status='complete') OR
                    (a.status='manual_review' AND i.status='manual_review' AND a.report IS NOT NULL
                     AND json_extract("""+metadata+""",'$.assessment_version')=?))
-            AND json_extract(a.report,'$.format') IS NOT 'advisory_text'
+            AND (json_extract(a.report,'$.format') IS NOT 'advisory_text' OR a.status='complete')
             AND r.request_id IS NULL""",(VERSION,)).fetchall()
         queued = 0
         for incident, revision, evidence, report, metadata in rows:
-            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='human_reviews'").fetchone():
+            parsed=json.loads(report)
+            advisory_only = parsed.get('format') == ADVISORY_FORMAT
+            if advisory_only and assessment_label(parsed) != 'BENIGN': continue
+            if not advisory_only and db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='human_reviews'").fetchone():
                 from human_review import attach,load_incident
                 reviewed=attach(db,load_incident(db,incident))['human_review']
                 if reviewed and reviewed['conclusion']!='NEEDS_MORE_EVIDENCE': continue
             request_id = secrets.token_hex(12)
             plan = None
-            parsed=json.loads(report)
             wants_response=parsed.get('assessment_version')!=VERSION or parsed.get('recommended_action')=='REQUEST_BLOCK_APPROVAL'
-            if parsed["verdict"] == "SUSPICIOUS" and wants_response and json.loads(evidence).get("scenario") != "dvwa_sqli":
+            if not advisory_only and parsed["verdict"] == "SUSPICIOUS" and wants_response and json.loads(evidence).get("scenario") != "dvwa_sqli":
                 try:
                     plan = bound_plan(json.loads(evidence),json.loads(report),json.loads(metadata or '{}'),policy,now)
                 except (ValueError, KeyError, TypeError) as exc:
@@ -232,6 +235,11 @@ def message_for(row):
     row=dict(row)
     experimental=json.loads(row.get('context') or '{}').get('model_qualification')=='experimental_unverified'
     report = present_report(json.loads(row["report"]))
+    if report.get('format') == ADVISORY_FORMAT:
+        prose = report['reason']
+        return dict(chat_id=row['chat_id'], text='🟢 AI assessment: Benign — Report only\n'
+                    +incident_header(row)+'No decision required.\n\n'
+                    +prose[:600]+('…' if len(prose)>600 else ''))
     if row['plan'] and (report.get('scenario')=='ssh_investigation' or json.loads(row['plan']).get('mode')=='live'):
         return ssh_action_message(row,report)
     expiry = datetime.fromtimestamp(row["expires_at"], timezone.utc).isoformat()

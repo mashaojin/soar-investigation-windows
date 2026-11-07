@@ -19,15 +19,7 @@ function verdictClass(value){return value==='SUSPICIOUS'?'suspicious':value==='B
 function severityLabel(value){return value==='SUSPICIOUS'?'Suspicious':value==='BENIGN'?'Benign':value==='INSUFFICIENT_EVIDENCE'?'Insufficient evidence':'No verdict yet';}
 function severityIcon(value){const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('class','severity-icon');svg.setAttribute('aria-hidden','true');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','2');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');const kind=verdictClass(value);if(kind!=='suspicious'){const circle=document.createElementNS(ns,'circle');circle.setAttribute('cx','12');circle.setAttribute('cy','12');circle.setAttribute('r','9');svg.append(circle);}for(const d of kind==='suspicious'?['M10.3 3.5a2 2 0 0 1 3.4 0l8 14A2 2 0 0 1 20 20H4a2 2 0 0 1-1.7-2.5z','M12 8v5m0 3h.01']:kind==='benign'?['m8 12 3 3 5-6']:['M12 7v5l3 2']){const path=document.createElementNS(ns,'path');path.setAttribute('d',d);svg.append(path);}return svg;}
 function severityBadge(value){const el=node('span',undefined,'incident-severity '+verdictClass(value));el.setAttribute('aria-label','AI verdict: '+severityLabel(value));el.append(severityIcon(value),document.createTextNode(severityLabel(value)));return el;}
-function assessmentVerdict(incident){
-    const report=incident.report;
-    let verdict=incident.view?.ai_verdict??report?.verdict;
-    if(report?.format==='advisory_text'){
-        const firstLine=report.reason?.trim().split(/\r?\n/,1)[0].replaceAll('**','');
-        verdict=firstLine?.match(/^(?:Assessment|Verdict):\s*(Suspicious|Benign)\.?$/i)?.[1].toUpperCase();
-    }
-    return verdict==='SUSPICIOUS'||verdict==='BENIGN'?verdict:null;
-}
+function assessmentVerdict(incident){return Object.hasOwn(incident.view||{},'ai_verdict')?incident.view.ai_verdict:incident.report?.verdict;}
 function entries(){return data?.history?.incidents||[];}
 function technicalPlan(plan,key){const body=node('div',undefined,'technical');body.append(node('p','Source: '+(plan.source_format||'Historical record')+' · Version: '+(plan.version||'legacy')),jsonBlock(plan));return disclosure(key,'Technical details and provenance',body);}
 function planFields(plan,key){const body=node('div');body.append(definition([
@@ -129,7 +121,7 @@ body.append(disclosure(key+':view','View plan',planFields(p,key)));
 
 }
 function renderResponse(r){const body=$('response-context'),a=r.approval;body.replaceChildren();
-if(!a){body.append(node('p',r.view?.human_resolved?'Human review saved. No firewall response was authorized.':r.review_context?.can_review?'Human review is needed. No firewall response has been proposed.':r.report?'Report ready; no Telegram delivery recorded yet.':'Waiting for the assessment.','muted'));return;}
+if(!a){body.append(node('p',r.view?.human_resolved?'Human review saved. No firewall response was authorized.':r.review_context?.review_optional?'Report only. Human review is optional.':r.review_context?.can_review?'Human review is needed. No firewall response has been proposed.':r.report?'Report ready; no Telegram delivery recorded yet.':'Waiting for the assessment.','muted'));return;}
 const label={pending:'Awaiting your Telegram decision',approved:'Response approved',notified:'Report delivered',denied:'Report only — declined',expired:'Request expired',stale:'Request invalidated',dry_run_complete:'Simulated response complete',duplicate_action:'Equivalent simulation already recorded',policy_rejected:'Response validation failed',delivery_unknown:'Delivery needs review',queued:'Queued for delivery',sending:'Sending report',live_preparing:'Preparing live response',live_executing:'Applying / verifying live response',live_blocked:'Temporary SSH block applied',live_complete:'Live block removed; connectivity restored',live_failed:'Live response verification failed',live_recovery_required:'Live response needs operator review'}[a.status]||a.status;
 body.append(badge(label,['pending','expired','stale','policy_rejected','delivery_unknown'].includes(a.status)?'suspicious':''));
 if(a.plan){body.append(node('p','Proposed scope: '+a.plan.source_ip+' → '+a.plan.destination_ip+':'+a.plan.port+' for '+a.plan.duration_seconds+' seconds.'),node('p',a.plan.mode==='live'?'LIVE response. Approval automatically starts the guarded block; monitoring continues.':'Dry-run only. No firewall rule is applied.'));
@@ -212,7 +204,7 @@ $('human-review-form').hidden=!context.can_review||(resolved&&!humanFollowupOpen
 for(const el of $('human-review-form').elements)el.disabled=humanReviewBusy;
 const notice=context.notification,status=notice?.status;const delivered={queued:'Queued for the monitor’s Telegram handler.',sent:'Review notice sent to Telegram.',delivery_unknown:'Delivery could not be confirmed. No automatic resend.',sending:'Sending review notice…',stale:'An earlier notice was invalidated by changed evidence.',cancelled:'Queued notice cancelled because the review was resolved.'};
 $('human-review-notification').textContent=delivered[status]||'Telegram can notify you to complete this review on the dashboard.';
-$('notify-human-review').hidden=!context.can_review||!!resolved;$('notify-human-review').disabled=humanReviewBusy||!!notice;
+$('notify-human-review').hidden=!context.can_review||context.review_optional||!!resolved;$('notify-human-review').disabled=humanReviewBusy||!!notice;
 $('human-review-history').hidden=!history.length;
 $('human-review-history-list').replaceChildren(...history.map(h=>{const item=node('div',undefined,'human-review-entry');item.append(node('strong',({BENIGN:'Benign / authorized activity',SUSPICIOUS:'Suspicious / unauthorized activity',NEEDS_MORE_EVIDENCE:'Need more evidence — keep open'})[h.conclusion]),node('p',h.reviewer+' · '+formatTime(h.created_at)+' · revision '+h.revision+(h.applies_to_current_snapshot?'':' · earlier evidence snapshot'),'muted small'),node('p',h.notes,'human-review-notes'));return item;}));}
 $('human-review-form').addEventListener('input',persistHumanDraft);
