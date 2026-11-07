@@ -19,7 +19,15 @@ function verdictClass(value){return value==='SUSPICIOUS'?'suspicious':value==='B
 function severityLabel(value){return value==='SUSPICIOUS'?'Suspicious':value==='BENIGN'?'Benign':value==='INSUFFICIENT_EVIDENCE'?'Insufficient evidence':'No verdict yet';}
 function severityIcon(value){const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('class','severity-icon');svg.setAttribute('aria-hidden','true');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','2');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');const kind=verdictClass(value);if(kind!=='suspicious'){const circle=document.createElementNS(ns,'circle');circle.setAttribute('cx','12');circle.setAttribute('cy','12');circle.setAttribute('r','9');svg.append(circle);}for(const d of kind==='suspicious'?['M10.3 3.5a2 2 0 0 1 3.4 0l8 14A2 2 0 0 1 20 20H4a2 2 0 0 1-1.7-2.5z','M12 8v5m0 3h.01']:kind==='benign'?['m8 12 3 3 5-6']:['M12 7v5l3 2']){const path=document.createElementNS(ns,'path');path.setAttribute('d',d);svg.append(path);}return svg;}
 function severityBadge(value){const el=node('span',undefined,'incident-severity '+verdictClass(value));el.setAttribute('aria-label','AI verdict: '+severityLabel(value));el.append(severityIcon(value),document.createTextNode(severityLabel(value)));return el;}
-function assessmentVerdict(incident){return Object.hasOwn(incident.view||{},'ai_verdict')?incident.view.ai_verdict:incident.report?.verdict;}
+function assessmentVerdict(incident){
+    const report=incident.report;
+    let verdict=incident.view?.ai_verdict??report?.verdict;
+    if(report?.format==='advisory_text'){
+        const firstLine=report.reason?.trim().split(/\r?\n/,1)[0].replaceAll('**','');
+        verdict=firstLine?.match(/^(?:Assessment|Verdict):\s*(Suspicious|Benign)\.?$/i)?.[1].toUpperCase();
+    }
+    return verdict==='SUSPICIOUS'||verdict==='BENIGN'?verdict:null;
+}
 function entries(){return data?.history?.incidents||[];}
 function technicalPlan(plan,key){const body=node('div',undefined,'technical');body.append(node('p','Source: '+(plan.source_format||'Historical record')+' · Version: '+(plan.version||'legacy')),jsonBlock(plan));return disclosure(key,'Technical details and provenance',body);}
 function planFields(plan,key){const body=node('div');body.append(definition([
@@ -53,6 +61,7 @@ if(fresh){parts.push('Watching for new alerts');if(service.assessment_version===
 else parts.push('Saved incidents remain available; continuous processing is not confirmed.');
 $('service-detail').textContent=parts.join(' · ');
 if($('experimental-notice'))$('experimental-notice').hidden=!data?.experimental_assessment;
+if($('provider-routing')){const p=data?.assessment_provider;$('provider-routing').textContent=p?'AI: '+p.provider+' / '+p.model+' · '+p.route.toUpperCase():'AI route unavailable';}
 const mode=data?.response_policy?.mode;$('response-mode').textContent=mode==='live'?'Response: LIVE · '+data.response_policy.duration_seconds+'s':mode==='dry_run'?'Response: dry run':'Response mode unavailable';}
 function updateTimers(){const bar=$('phase-progress');if(bar?.dataset.kind==='determinate'){
 const start=new Date(bar.dataset.start).getTime(),end=new Date(bar.dataset.end).getTime(),now=Date.now();
@@ -64,7 +73,10 @@ function renderSelected(){const r=entries().find(i=>i.incident_id===ui.selected)
 if(!r){$('human-review-panel').hidden=true;$('authorization').replaceChildren(node('p','Select an incident to inspect its recorded authorization.','muted'));$('response-context').replaceChildren(node('p','No incident selected.','muted'));return;}
 const m=r.metadata||{},report=r.report,shown=r.display_report||report,trace=m.tool_trace||[],v=r.view||{};
 $('title').textContent=(r.evidence.source_ip||'Unknown')+' → '+(r.evidence.destination_ip||'Unknown')+':'+(r.evidence.destination_port||22);
-const severity=assessmentVerdict(r);$('verdict').replaceChildren(severityIcon(severity),document.createTextNode('AI verdict: '+severityLabel(severity)));$('verdict').className='badge '+verdictClass(severity);
+const severity=assessmentVerdict(r), assessment=severityLabel(severity);
+$('verdict').replaceChildren(severityIcon(severity),document.createTextNode(assessment));
+$('verdict').className='badge '+verdictClass(severity);
+$('verdict').setAttribute('aria-label','AI verdict: '+assessment);
 const correlation=r.evidence.correlation;
 $('incident-time').textContent=correlation?(correlation.kind==='approved_plan'?'Approved-plan window: ':'Correlation window: ')+formatTime(r.evidence.window_start)+' → '+formatTime(correlation.end)+' · '+zone+' · '+r.alert_count+' grouped alerts':'Recorded '+formatTime(r.evidence.window_start)+' · '+zone;
 $('incident-id').textContent=(r.incident_number||r.incident_id.slice(0,16))+' · revision '+r.revision;
@@ -72,8 +84,9 @@ if(r.incident_occurred_at)$('incident-time').textContent='First recorded alert: 
 renderProgress(r);renderHumanReview(r);$('investigation-status').replaceChildren(...(v.workflow_attention?[severityIcon(null)]:[]),document.createTextNode('Investigation status: '+(v.label||r.status)));$('investigation-status').className=v.workflow_attention?'badge review workflow-review':'';$('status-detail').textContent=v.detail||'';
 $('waiting-deadline').hidden=!v.waiting_until||!!report;$('waiting-deadline').textContent=v.waiting_until?'Evidence window closes for analysis: '+formatTime(v.waiting_until,false,true)+' ('+zone+')':'';
 $('stages').replaceChildren(...(v.stages||[]).map(s=>{const el=node('li',undefined,'stage '+s.state);el.append(node('span',({done:'✓',active:'…',attention:'!',skipped:'—',waiting:'○'})[s.state]||'○'),document.createTextNode(s.label));return el;}));
-$('model-name').textContent=(m.model||(r.analysis_status==='manual_review'?'No validated AI assessment':'Awaiting analysis'))+(report?(m.assessment_version==='gemma_judgment_v2'?' · model-led judgment':m.engine==='ollama_direct'?' · historical rule-guided':' · historical Hermes'):'');$('reason').textContent=shown?.reason||(v.human_resolved?'No validated AI verdict was accepted. The investigation or validation error is retained in technical details.':r.error||v.detail||'No assessment recorded yet.');
+$('model-name').textContent=(m.model||(r.analysis_status==='manual_review'?'No validated AI assessment':'Awaiting analysis'))+(report?(m.assessment_version==='gemma_judgment_v2'?' · model-led judgment':m.engine==='ollama_direct'?' · historical rule-guided':' · historical Hermes'):'');$('reason').textContent=shown?.reason||r.error?.replace(/^Manual review required\. No automatic retry\. \w+: /,'')||(v.human_resolved?'No AI assessment was recorded.':v.detail||'No assessment recorded yet.');
 if(m.model_qualification==='experimental_unverified')$('model-name').textContent=(m.model||m.configured_model||'Requested model')+' · experimental, unverified';
+if(m.provider)$('model-name').textContent=(m.model||m.configured_model||'Requested model')+' · '+m.provider+' / '+(m.model_route||'route unavailable')+(m.model_version?' · returned '+m.model_version:'')+(m.model_qualification==='experimental_unverified'?' · experimental, unverified':'');
 $('recommendations').replaceChildren(...(shown?.recommendations||[]).filter(x=>!['none','n/a'].includes(x.toLowerCase())).map(x=>node('li',x)));
 $('limits').textContent='Requests: '+(m.request_count??'—')+' · Last input: '+(m.input_bytes??'—')+' bytes · Truncated: '+(m.truncated===undefined?'not recorded':m.truncated?'yes':'no')+(report?.coverage?' · Coverage: '+report.coverage:'');
 $('judgment-facts')?.remove();
@@ -98,8 +111,8 @@ else $('policy-findings').append(node('p','No deterministic findings recorded ye
 if(!facts&&!trace.length)$('tools').append(node('p','No scoped authentication evidence recorded yet.','muted small'));
 const refBox=node('div',undefined,'assessment-references');
 if(report?.evidence_refs?.length){refBox.append(node('span','AI-cited references: '));for(const id of report.evidence_refs){const link=node('a',id);link.href='#evidence-'+id;refBox.append(link,document.createTextNode(' '));}const dependencies=(report.resolved_evidence_refs||[]).filter(id=>!report.evidence_refs.includes(id));if(dependencies.length){refBox.append(node('span',' · Python-linked sources: '));for(const id of dependencies){const link=node('a',id);link.href='#evidence-'+id;refBox.append(link,document.createTextNode(' '));}}refBox.append(node('p',report.reference_limit||'References identify supplied evidence; they do not verify every prose claim.','muted small'));}
-else if(report)refBox.append(node('p','Historical assessment: structured claim references were not recorded.','muted small'));
-$('original-ai-details')?.remove();refBox.id='assessment-references';const technical=node('div');technical.append(refBox,jsonBlock({report:report||null,error:r.error||null,analysis_status:r.analysis_status}));const original=disclosure(r.incident_id+':original-ai','Original AI output and evidence references',technical);original.id='original-ai-details';$('limits').after(original);
+else if(report)refBox.append(node('p',report.format==='advisory_text'?'No evidence IDs cited.':'Historical assessment: structured claim references were not recorded.','muted small'));
+$('original-ai-details')?.remove();refBox.id='assessment-references';const technical=node('div');technical.append(refBox,jsonBlock({report:report||null,rejected_output:m.rejected_output||null,error:r.error||null,analysis_status:r.analysis_status}));const original=disclosure(r.incident_id+':original-ai','Original AI output and evidence references',technical);original.id='original-ai-details';$('limits').after(original);
 $('incident-technical').replaceChildren(disclosure(r.incident_id+':'+r.revision+':incident','Incident technical details',jsonBlock(r.evidence)));
 renderAuthorization(r);renderResponse(r);
 }

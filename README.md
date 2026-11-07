@@ -7,11 +7,11 @@
 This repository is the dedicated Windows (WSL2/Hyper-V) implementation of [soar-investigation-macOS](https://github.com/mashaojin/soar-investigation-macOS)
 , retaining upstream test compatibility without modifying the original repository.
 
-**Suricata → Python correlation and SSH evidence → one bounded Ollama assessment → Python validation → Telegram decision → optional temporary SSH deny with victim-side rollback.**
+**Suricata → Python correlation and SSH evidence → one bounded Ollama or Gemini assessment → dashboard report and Telegram human review.**
 
-The model assesses evidence. Python owns collection, validation and response policy. A human approves each eligible firewall response. This is an educational lab, not a production security product.
+The model explains the incident, cites evidence and suggests a next step in plain language. Python supplies the recorded facts and checks the report's length and cited IDs. The operator records a separate conclusion. The guarded firewall workflow remains available for eligible structured assessments. Advisory reports cannot create block requests.
 
-> **Windows status:** the WSL2/Hyper-V port is implemented and tested, but Gemma3:1b investigation quality is unreliable. Actual manual firewall enforcement and automatic rollback passed; the complete valid-assessment → Telegram YES → live-worker path is still unverified on Windows. See [verification limits](#verification-status).
+> **Windows status:** local Ollama and optional Gemini API routing are implemented. The models can misinterpret recorded evidence, so review the report alongside the underlying facts. Manual firewall enforcement and automatic rollback were verified separately. See [verification limits](#verification-status).
 
 ## Contents
 
@@ -36,23 +36,12 @@ flowchart TD
     C --> D[Correlate related alerts into an incident]
     D --> E[Scoped Victim SSH journal evidence]
     D --> F[Approved-plan lookup and scope comparisons]
-    E --> G[One bounded Ollama assessment]
+    E --> G[One bounded Ollama or Gemini assessment]
     F --> G
-    G --> H{Python validates output and evidence}
-    H -->|Invalid or insufficient| I[Manual review]
-    H -->|Valid Benign or report only| J[Telegram report]
-    H -->|Valid Suspicious and block requested| K{Independent response policy}
-    K -->|Ineligible| J
-    K -->|Eligible| L[Incident-bound Telegram approval request]
-    L -->|Deny or expire| J
-    L -->|Authorized operator approves| M[Guarded response worker]
-    M --> N[Arm Victim rollback before deny]
-    N --> O[Apply and independently verify temporary SSH deny]
-    O --> P[Verify removal and restored source connectivity]
+    G --> H[Check report length and cited IDs]
+    H --> I[Telegram excerpt or assessment error]
     I --> Q[Separate human conclusion]
     C --> R[Dashboard history and live progress]
-    J --> R
-    P --> R
     Q --> R
 ```
 
@@ -63,12 +52,12 @@ flowchart TD
 | Suricata | Connection-threshold evidence | Password outcomes, malicious intent or a block |
 | Python collector | Continuous ingestion, cursor handling and incident correlation | An AI verdict |
 | Evidence/plan layer | Scoped authentication outcomes, coverage and authorization comparisons | A security classification |
-| Configured Ollama model | Verdict, explanation and recommended next step | Tool execution, shell commands or firewall changes |
-| Python validators/policy | Check structure, facts, coverage, attribution and response eligibility | Human approval |
+| Ollama or Gemini | Plain-language verdict, explanation, citations and recommended next step | Tool execution, shell commands or firewall changes |
+| Python report checks | Bound output to 4,096 UTF-8 bytes and check cited IDs against supplied evidence | Confirm the model's interpretation |
 | Telegram operator | Approve/deny one exact eligible response, or record a separate human review | Reuse an expired/stale approval |
 | Victim helper | Fixed scoped deny and rollback operations | Arbitrary model-generated commands |
 
-The model can choose **Benign**, **Suspicious** or **Insufficient Evidence**, and recommend **Report only**, **Request more evidence** or **Request block approval**. Inputs are not predetermined verdicts. Suspicious alone does not offer a block: the recommendation and independent Python checks must also pass.
+The Windows badge shows **Benign**, **Suspicious**, or **No verdict yet**. For a prose report it uses an explicit first-line assessment such as `Assessment: Suspicious`. The prose, recorded facts, workflow status and human conclusion are shown separately.
 
 ## Screenshots
 
@@ -107,7 +96,7 @@ The live screenshot shows a completed historical response, so its pending approv
 | --- | --- |
 | Host | Windows 11 Pro with Hyper-V; 16 GB RAM lab tested |
 | Python | WSL2 Ubuntu, Python 3.12+; **not native Windows Python** |
-| Inference | Ollama on Windows; explicit endpoint and model identity |
+| Inference | Ollama on Windows by default, or Gemini API with a local key and explicit evidence-sharing authorization |
 | Default example model | gemma3:1b, 8,192 context and 1,024 output budget; known quality failures remain documented |
 | Victim | Ubuntu guest with SSH, Suricata/EVE and readable scoped SSH journal evidence |
 | Trust-Client | Ubuntu guest for approved tests and account-scope scenarios |
@@ -167,6 +156,12 @@ Open [http://127.0.0.1:8765](http://127.0.0.1:8765) in the Windows browser. Chec
 
 After the relevant prerequisites and assessment-mode authorization are complete, replace collection-only mode with the appropriate command from [Windows operating modes](docs/WINDOWS.md#8-select-an-explicit-assessmentresponse-mode). Never run two monitors against the same database or two pollers for the same bot.
 
+### 4. Select a provider and prompt
+
+Open **Settings → Pipeline configuration → Assessment provider and model**. Select **Ollama** with an installed model such as `gemma3:1b`, or **Gemini API** with an explicit model ID and returned version such as `gemini-2.5-flash-lite`. Activate the selection. For dry-run human review, update the matching provider, model and binding in the local runtime and response settings before restarting the monitor. See [Gemini setup and authorization](docs/GEMINI_PROVIDER.md).
+
+In **Settings → AI prompt**, save and activate the [example plain-language SSH prompt](prompts/windows-ssh-advisory.txt) to reproduce the verdict line, scope analysis and citation format. Prompt versions apply to new requests. Both providers use the same active investigation guidance.
+
 ## Dashboard guide
 
 The dashboard is an investigation workspace and a set of explicit controls—not a service launcher. Check monitor/component health and response mode before using it. The complete [dashboard guide](docs/DASHBOARD.md) explains every panel, supported field, validation state and change boundary.
@@ -207,7 +202,7 @@ Comparisons collect no new logs, send no Telegram messages and perform no firewa
 
 ### Read configuration and complete human review
 
-**Settings → Pipeline configuration** is read only: it explains grouping, log-arrival allowance, pre-alert context, approved evidence scope, model identity and token limits. Read the configured Windows model/options rather than assuming the Mac screenshot’s values; this panel does not change operating mode. It is not a Python-code, credential or response-mode editor.
+**Settings → Pipeline configuration** lets you select the assessment provider and model. The tables below the selector explain grouping, evidence scope and token limits. Start or restart the monitor separately from WSL.
 
 For an incident awaiting review, inspect its evidence, then use **Human review → Reviewer name → Your conclusion → optional Review notes → Save human review**. Benign/Suspicious resolves the human review; Need more evidence keeps it open. **Review history** retains older entries, and **Add follow-up review** records a new conclusion. Human review never overwrites the AI assessment or approves a firewall block. See [human review](docs/DASHBOARD.md#7-record-a-human-review).
 
@@ -245,9 +240,9 @@ Start with dry-run responses and verify each stage before continuing. Run attemp
 
 | Scenario | Manual activity | Evidence-dependent interpretation | Possible Telegram path |
 | --- | --- | --- | --- |
-| Approved test | Trust-Client uses soc_test inside an approved window and limit | Benign when evidence supports the plan | Report only |
-| Unapproved activity | Kali makes bounded SSH attempts with no matching approved plan | Suspicious if the observed context supports that conclusion; no plan alone is not proof of attack | Eligible block approval, report only or manual review |
-| Scope violation | Trust-Client attempts root while its plan permits only soc_test | Recorded root attempt is outside account scope; model assesses its significance | Eligible block approval, report only or manual review |
+| Approved test | Trust-Client uses soc_test inside an approved window and limit | Benign when evidence supports the plan | Advisory report and human review |
+| Unapproved activity | Kali makes bounded SSH attempts with no matching approved plan | Suspicious if the observed context supports that conclusion; no plan alone is not proof of attack | Advisory report and human review |
+| Scope violation | Trust-Client attempts root while its plan permits only soc_test | Recorded root attempt is outside account scope; model assesses its significance | Advisory report and human review |
 
 Create a plan on the dashboard with **New test plan → Validate → Approve plan**. Review source, target, permitted account, failure limit and future window. Test-plan approval is separate from response approval.
 
@@ -269,6 +264,8 @@ Python waits for the complete correlation/plan evidence window plus arrival marg
 ## Telegram decisions
 
 ### Response approval
+
+This section describes the guarded structured-assessment workflow. New Windows SSH prose reports follow the human-review path below, including when the prose recommends a block.
 
 An eligible Suspicious assessment with a supported block recommendation can ask:
 
@@ -304,7 +301,7 @@ The response targets the source IP's access to **Victim TCP/22**, not all traffi
 
 ### Manual investigation review
 
-Insufficient evidence, model requests for more evidence and validation errors lead to **Benign / Suspicious / Need more evidence**. These save a separate human conclusion. They never authorize a firewall change or overwrite the AI assessment. Need more evidence keeps the case open for operator investigation; it does not automatically launch another model call.
+Telegram includes up to 600 characters of the AI assessment and a link to the full incident. If the report is unavailable, the notice gives the review reason. **Benign / Suspicious / Need more evidence** save a separate human conclusion. Need more evidence keeps the case open for operator investigation.
 
 If model output is rejected, there is **no accepted AI verdict**, even if raw output contained a label. The technical details retain the original output/error. Do not reinterpret a rejected assessment as an eligible live response.
 
@@ -320,10 +317,12 @@ After a guest reboot, reverify DHCP addresses, routes and host-key identity. Cha
 
 | Check | Windows result |
 | --- | --- |
-| Clean-checkout offline suite | **292 tests passed** |
+| Offline suite | Reproduce with the commands below or check GitHub Actions |
 | JavaScript, PowerShell syntax and Git whitespace | Passed |
 | Publication audit | Passed for candidate source/docs; also tested with rejection controls |
 | Strict-key guest transport, sensor/journal evidence and Windows Ollama | Verified in the lab |
+| Gemini API and Telegram review | A real lab incident reached Gemini and the Telegram review path during the earlier structured evaluation. The malformed structured reply was rejected. |
+| Plain-language Ollama report | Exercised against a synthetic fixture and lab evidence. Recorded examples include factual errors. |
 | Three manual scenario/review workflows | Verified |
 | Real manual helper deny, protected management and automatic rollback | Verified; approximately 60.43 seconds |
 | Valid assessment → actual Telegram YES → live-worker enforcement | **Not yet verified**; recent Gemma3 outputs failed validation |
@@ -341,7 +340,7 @@ git diff --check
 
 GitHub Actions runs the offline tests, publication audit and JavaScript syntax checks. It does not run guest traffic, model evaluation, Telegram or live firewall enforcement.
 
-For actual-model synthetic evaluation:
+For a plain-language synthetic check use **Settings → Pipeline configuration → Test with synthetic evidence only**. The scripts below reproduce the earlier structured-output evaluation:
 
 ```sh
 python3 verify_gemma.py --output verification-model-base.json
@@ -359,7 +358,9 @@ Candidates can override model, thread count or instruction file for evaluation o
 | WSL cannot reach Windows Ollama | Configured Windows loopback stdio transport; WSL localhost is not assumed equivalent |
 | Telegram messages absent | Locally configured bot/chat identity, exclusive polling and current handler health; never expose the token |
 | Root attempt not shown | Actual scoped Victim journal, account counts, time window and SSH protections, not client output alone |
-| No live buttons | Verdict/recommendation, validation error, Python eligibility, selected mode and fresh activation gate |
+| No live buttons on an advisory report | Use the Telegram review choices to record a human conclusion |
+| Monitor stops after a provider switch | Match the provider/model binding in both review settings and restart in WSL |
+| Gemini report unavailable | Check local key, authorization scope, selected model version and Google project quota |
 | Block request rejected | Current operator/message/revision/evidence/status/expiry bindings; create no historical approval shortcuts |
 | Model says data is missing despite collected facts | Preserve rejected output and perform synthetic offline diagnosis; do not disable fact or coverage checks |
 

@@ -9,6 +9,7 @@ from pathlib import Path
 import sqlite3
 import subprocess
 from ollama_analyst import ollama_report, assessment_payload, make_prompt, validate_assessment
+from assessment_providers import provider_report,freeze
 from assessment_facts import VERSION, has_observations
 
 
@@ -56,7 +57,7 @@ def initialize(db_path):
         """)
 
 
-def analyze_next(db_path, settings, *, now=None, runner=ollama_report):
+def analyze_next(db_path, settings, *, now=None, runner=provider_report):
     now = now or datetime.now(timezone.utc)
     initialize(db_path)
     with closing(sqlite3.connect(db_path)) as db, db:
@@ -91,13 +92,22 @@ def analyze_next(db_path, settings, *, now=None, runner=ollama_report):
         evidence = json.loads(encoded)
         evidence["alert_count"] = count
         settings = dict(settings)
+        settings['_provider_root']=str(Path(db_path).resolve().parent)
+        settings['_incident_id']=incident_id
+        settings['_incident_window_start']=evidence.get('window_start')
         if settings.get('lab_profile'):
             from lab_config import load_profile
             settings['lab_profile']=load_profile(settings,Path(db_path).resolve().parent)
         from experimental_assessment import qualification
+        settings=freeze(settings)
+        from provider_state import effective,stamp
+        route=effective(settings)
         experiment=qualification(settings)
         from human_approved_live import authorization
-        live_acceptance=authorization(settings)
+        try:live_acceptance=authorization(settings)
+        except ValueError:
+            if route['selection_id']=='default':raise
+            live_acceptance=dict(provider_reauthorization_required=True)
         prompt = json.dumps(evidence, sort_keys=True)
         digest = hashlib.sha256((prompt + json.dumps(settings.get("investigation"), sort_keys=True)).encode()).hexdigest()
         db.execute("INSERT INTO analyses(incident_id,revision,status,prompt_hash) VALUES(?,?,?,?)",
@@ -115,9 +125,14 @@ def analyze_next(db_path, settings, *, now=None, runner=ollama_report):
             _, investigation = prepare_live_job(incident_id, evidence, settings["approved_plans"],**profile_args)
             settings["investigation"] = investigation
         payload = assessment_payload(evidence, investigation)
+        from advisory_report import FORMAT as ADVISORY_FORMAT, validate as validate_advisory
+        advisory = (isinstance(settings.get('lab_profile'), dict)
+                    and settings['lab_profile'].get('platform') == 'windows-hyperv'
+                    and evidence.get('signature_id') == 9001001)
+        settings['_advisory_report'] = advisory
         from experiment_store import active_instruction, python_context, rule_provenance
         prompt_version=active_instruction(Path(db_path).resolve().parent)
-        prompt = make_prompt(payload,instruction=prompt_version['text'])
+        prompt = make_prompt(payload,instruction=prompt_version['text'],advisory=advisory)
         digest = hashlib.sha256(prompt.encode()).hexdigest()
         prepared = {"engine": "ollama_direct", "assessment_version":VERSION,"assessment_data": payload,
                     "investigation": investigation, "request_count": 0, "request_attempts": 0,
@@ -125,13 +140,17 @@ def analyze_next(db_path, settings, *, now=None, runner=ollama_report):
                     "rule_provenance":rule_provenance(Path(db_path).resolve().parent,evidence)}
         prepared.update(experiment)
         prepared.update(live_acceptance)
+        prepared.update(stamp(route))
+        prepared['engine']=route['provider']+'_direct'
+        if advisory:
+            prepared['assessment_format'] = ADVISORY_FORMAT
         # Persist the immutable authorization/evidence snapshot before inference,
         # including failed/partial assessments. Legacy tool traces are untouched.
         with closing(sqlite3.connect(db_path)) as audit_db, audit_db:
             audit_db.execute("UPDATE analyses SET prompt_hash=?,metadata=? WHERE incident_id=? AND revision=?",
                              (digest, json.dumps(prepared), incident_id, revision))
         metadata = json.dumps(prepared)
-        if investigation:
+        if investigation and not advisory:
             auth = investigation['authentication']
             if auth.get('coverage') not in ('complete_for_fixture', 'observed_window'):
                 raise ValueError('Incomplete authentication coverage requires review before inference')
@@ -146,10 +165,12 @@ def analyze_next(db_path, settings, *, now=None, runner=ollama_report):
         combined=dict(prepared, **{key: value for key, value in envelope.items() if key != "text"})
         combined.update(experiment)  # Trusted qualification cannot be cleared by response text/metadata.
         combined.update(live_acceptance)
+        combined.update(stamp(route))
         metadata=json.dumps(combined)
         try:
-            validated = validate_assessment(envelope["text"], payload, investigation)
-            if investigation:
+            validated = (validate_advisory(envelope["text"], payload) if advisory else
+                         validate_assessment(envelope["text"], payload, investigation))
+            if investigation and not advisory:
                 validated["scenario"] = "ssh_investigation"
                 validated["coverage"] = investigation["authentication"]["coverage"]
             report = json.dumps(validated, sort_keys=True)
@@ -157,7 +178,7 @@ def analyze_next(db_path, settings, *, now=None, runner=ollama_report):
             metadata = json.dumps(dict(json.loads(metadata),
                                        rejected_output=str(envelope.get("text", ""))[:4096]))
             raise
-        status = "manual_review" if validated["verdict"] == "INSUFFICIENT_EVIDENCE" or validated.get('recommended_action')=='REQUEST_MORE_EVIDENCE' else "complete"
+        status = "manual_review" if advisory or validated["verdict"] == "INSUFFICIENT_EVIDENCE" or validated.get('recommended_action')=='REQUEST_MORE_EVIDENCE' else "complete"
         if experiment:status='manual_review'
     except (ValueError, KeyError, TypeError, OSError, RuntimeError, subprocess.SubprocessError, http.client.HTTPException) as exc:
         error = ("Manual review required. No automatic retry. " + type(exc).__name__ + ": " + str(exc))[:3500]

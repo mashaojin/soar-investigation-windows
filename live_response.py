@@ -19,6 +19,8 @@ def validate_live_evidence(evidence, report, metadata, policy, now):
         raise ValueError('Experimental unverified AI cannot enter live response')
     from lab_config import load_profile
     lab=load_profile(policy)
+    from provider_state import validate_binding
+    route=validate_binding(metadata,policy)
     if policy.get('human_approved_live'):
         from human_approved_live import authorization
         authorization(policy,policy)
@@ -30,7 +32,7 @@ def validate_live_evidence(evidence, report, metadata, policy, now):
         raise ValueError('Live responses require a new incident after live-mode activation, under 30 minutes old')
     job=metadata.get('investigation',{}); auth=job.get('authentication',{})
     checks=auth.get('coverage_checks',{})
-    if (metadata.get('engine')!='ollama_direct' or metadata.get('model')!=lab['ollama']['model']
+    if (metadata.get('engine')!=route['provider']+'_direct' or metadata.get('model')!=route['model']
         or job.get('origin')!='live_read_only' or report.get('verdict')!='SUSPICIOUS'
         or report.get('coverage')!='observed_window' or auth.get('coverage')!='observed_window'
         or auth.get('limited') is not False

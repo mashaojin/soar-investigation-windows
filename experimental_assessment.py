@@ -6,10 +6,15 @@ from lab_config import load_profile
 def qualification(settings, policy=None):
     value=settings.get('experimental_assessment')
     if value is None:return {}
-    if not isinstance(value,dict) or set(value)!={'model','authorized_at','mode'}:
+    required={'model','authorized_at','mode'}
+    if not isinstance(value,dict) or not required<=set(value) or set(value)-required-{'provider','provider_binding'}:
         raise ValueError('Invalid experimental assessment authorization')
     lab=load_profile(settings)
-    if lab['platform']!='windows-hyperv' or value['model']!=lab['ollama']['model'] or value['mode']!='dry_run_human_review':
+    from provider_state import effective
+    route=effective(settings)
+    if (lab['platform']!='windows-hyperv' or value['model']!=route['model'] or value['mode']!='dry_run_human_review'
+            or value.get('provider','ollama')!=route['provider']
+            or (route['selection_id']!='default' and value.get('provider_binding')!=route['binding'])):
         raise ValueError('Experimental authorization differs from the configured Windows model or review-only scope')
     stamp=datetime.fromisoformat(value['authorized_at'].replace('Z','+00:00'))
     if stamp.tzinfo is None:raise ValueError('Experimental authorization requires a timezone')

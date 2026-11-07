@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>SOAR investigation dashboard</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script><script src="/experiments.js" defer></script></head>
 <body>
-<header class="app-header"><div class="brand"><span class="mark" aria-hidden="true">S</span><div><h1>SOAR investigation dashboard</h1><p>Python-orchestrated · AI assessment · human decision</p></div></div><div class="header-actions"><span class="mode-tag" id="response-mode">Checking response mode…</span><button id="experiments-button">Settings</button><button id="plans-button">Plans <span id="plan-count">(0)</span></button><button id="new-plan" class="primary">New test plan</button></div></header>
+<header class="app-header"><div class="brand"><span class="mark" aria-hidden="true">S</span><div><h1>SOAR investigation dashboard</h1><p>Python-orchestrated · AI assessment · human decision</p></div></div><div class="header-actions"><span class="mode-tag" id="provider-routing">Checking AI route…</span><span class="mode-tag" id="response-mode">Checking response mode…</span><button id="experiments-button">Settings</button><button id="plans-button">Plans <span id="plan-count">(0)</span></button><button id="new-plan" class="primary">New test plan</button></div></header>
 <main>
 <p id="experimental-notice" class="error" role="status" hidden>Experimental AI — unverified. Every result requires human review. Response actions are disabled.</p>
 <div class="activity-line"><p id="history-summary">Loading incident history…</p><div><span id="connection">Connecting to dashboard…</span><button id="refresh" class="subtle" aria-label="Refresh saved dashboard state">Refresh</button></div></div>
@@ -23,7 +23,7 @@
 <form id="human-review-form"><div class="formgrid"><label for="review-reviewer">Reviewer name<input id="review-reviewer" maxlength="80" required autocomplete="name" placeholder="Your name"></label><label for="review-conclusion">Your conclusion<select id="review-conclusion" required><option value="">Choose a conclusion</option><option value="BENIGN">Benign / authorized activity</option><option value="SUSPICIOUS">Suspicious / unauthorized activity</option><option value="NEEDS_MORE_EVIDENCE">Need more evidence — keep open</option></select></label></div><label class="editor-label" for="review-notes">Review notes (optional)<textarea id="review-notes" rows="4" placeholder="What evidence did you check, and why did you reach this conclusion?"></textarea></label><div class="formactions"><button id="save-human-review" type="submit" class="primary">Save human review</button></div></form>
 <p id="human-review-message" role="status" aria-live="polite"></p><details id="human-review-history"><summary>Review history</summary><div id="human-review-history-list"></div></details>
 </section>
-<section class="assessment"><div class="section-heading"><h3>AI security judgment</h3><span class="muted small" id="model-name"></span></div><p id="reason" class="assessment-reason"></p><ul id="recommendations"></ul><p class="muted small" id="limits"></p></section>
+<section class="assessment"><div class="section-heading"><h3>AI assessment</h3><span class="muted small" id="model-name"></span></div><p id="reason" class="assessment-reason"></p><ul id="recommendations"></ul><p class="muted small" id="limits"></p></section>
 <section class="evidence-section"><div class="section-heading"><h3>Observed facts</h3><span class="muted small" id="tool-count"></span></div><p class="muted small">Scoped collected evidence with source, time window and coverage limits. Suricata connection alerts alone do not prove failed passwords or compromise.</p><div id="tools"></div></section>
 <section class="evidence-section"><h3>Python scope comparisons</h3><p class="muted small">Recorded authorization, account and attempt-limit comparisons. The model makes the security judgment; Python checks the facts.</p><div id="policy-findings"></div></section><div id="incident-technical"></div>
 </div></article>
@@ -33,7 +33,7 @@
 <section class="panel context-card next-plan-card"><p class="eyebrow">Plan management</p><h2>Next test plan</h2><div id="next-plan"></div></section>
 </aside>
 </div>
-<footer>Python coordinates collection and policy checks · The configured model interprets bounded evidence directly through Ollama · Monitor health comes from a live heartbeat · Incident progress comes from recorded stages</footer>
+<footer>Python coordinates collection and policy checks · The configured model interprets bounded evidence through the configured provider; local/cloud routing is explicit · Monitor health comes from a live heartbeat · Incident progress comes from recorded stages</footer>
 </main>
 <dialog id="plan-drawer" aria-labelledby="drawer-title"><div class="drawer-heading"><div><p class="eyebrow">Plan management</p><h2 id="drawer-title">Test plans</h2></div><button id="close-plans" class="subtle" aria-label="Close plans">Close</button></div><div class="drawer-content">
 <p class="muted">Define the test scope, validate it, then explicitly approve its saved dashboard version. Run the test manually.</p>
@@ -79,6 +79,15 @@
 <div class="formactions"><button id="validate-rule">Validate on Victim</button><button id="apply-rule" class="primary" disabled>Apply validated rule and reload</button><button id="restore-rule" disabled>Restore previous rule and reload</button></div>
 <p class="muted small">Validation tests a candidate configuration without changing the active file. Apply writes the fixed file, tests the full configuration and waits for Suricata’s blocking reload. A backup is restored if activation fails. Read status before retrying any uncertain operation.</p><pre id="rule-review" hidden></pre>
 </section>
-<section id="pane-python" role="tabpanel" aria-labelledby="tab-python" hidden><h3>Pipeline configuration</h3><p class="muted">Read only · Key settings that control the evidence the model receives and the size of its response.</p><div id="python-settings"></div><h3>Model and token limits</h3><div id="model-settings"></div><p class="muted small">Saved-evidence comparisons change the instruction only. They cannot test a new Suricata rule against traffic that was never captured. Use a fresh manual rehearsal for rule changes.</p></section>
+<section id="pane-python" role="tabpanel" aria-labelledby="tab-python" hidden>
+<h3>Assessment provider and model</h3><p id="provider-current" class="muted"></p>
+<label class="editor-label">Provider<select id="assessment-provider"><option value="ollama">Ollama — configured host</option><option value="gemini">Gemini API — Google cloud</option></select></label>
+<label class="editor-label">Model ID<input id="provider-model" maxlength="128" spellcheck="false"></label>
+<label class="editor-label">Expected returned model version<input id="provider-version" maxlength="128" spellcheck="false"></label>
+<p id="provider-route" class="muted small"></p><p id="provider-access" class="muted small"></p>
+<p class="muted small">Selection affects future assessments and invalidates pending response approvals. It does not grant cloud-evidence consent, confirm API allowance or authorize a live block. A model/provider change requires fresh response authorization. Keys stay in a local environment or ignored .env.gemini file, never in this form. No automatic cloud fallback.</p>
+<div class="formactions"><button id="check-provider">Test with synthetic evidence only</button><button id="activate-provider" class="primary">Activate provider/model</button></div>
+<pre id="provider-check-result" class="muted small" aria-live="polite"></pre>
+<h3>Pipeline configuration</h3><p class="muted">Read only · Evidence collection and response policy are independent of the model provider.</p><div id="python-settings"></div><h3>Model and token limits</h3><div id="model-settings"></div><p class="muted small">Saved-evidence comparisons contain real incident evidence and require separate cloud consent when Gemini is selected. Synthetic connection tests never use saved incidents. A new rule needs a fresh manual rehearsal.</p></section>
 </div></dialog>
 </body></html>

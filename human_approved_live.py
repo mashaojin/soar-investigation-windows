@@ -7,9 +7,14 @@ def authorization(settings, policy=None):
     value=settings.get('human_approved_live')
     if value is None:return {}
     lab=load_profile(settings)
-    if (not isinstance(value,dict) or set(value)!={'model','authorized_at','accept_unqualified_model'}
+    from provider_state import effective
+    route=effective(settings)
+    required={'model','authorized_at','accept_unqualified_model'}
+    if (not isinstance(value,dict) or not required<=set(value) or set(value)-required-{'provider','provider_binding'}
             or value['accept_unqualified_model'] is not True or lab['platform']!='windows-hyperv'
-            or value['model']!=lab['ollama']['model'] or settings.get('experimental_assessment')):
+            or value['model']!=route['model'] or value.get('provider','ollama')!=route['provider']
+            or (route['selection_id']!='default' and value.get('provider_binding')!=route['binding'])
+            or settings.get('experimental_assessment')):
         raise ValueError('Invalid model-bound human-approved live authorization')
     stamp=datetime.fromisoformat(value['authorized_at'].replace('Z','+00:00'))
     if stamp.tzinfo is None:raise ValueError('Live authorization requires a timezone')

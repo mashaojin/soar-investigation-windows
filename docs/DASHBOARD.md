@@ -29,7 +29,7 @@ Inside the initialized WSL checkout, start `python3 windows_lab.py dashboard` an
 | Incident history | Source, incident number/time, AI verdict and workflow status | Selects one saved incident for inspection |
 | Selected incident | Source → Victim TCP/22, revision and correlation window | Identifies exactly which retained case is displayed |
 | Investigation stages | Completed stages and the current phase | Shows workflow completion, not a predictable percentage of elapsed processing time |
-| AI security judgment | Accepted verdict, explanation, recommendations, model and coverage | Displays model interpretation separately from Python checks and human review |
+| AI assessment | Advisory explanation, citations, suggested next step and model identity | Displays model interpretation alongside recorded facts and a separate human conclusion |
 | Observed facts / Python scope comparisons | Journal counts, account names, recorded plan, limits and coverage | Shows the evidence supporting or limiting that assessment |
 | Authorization context | Recorded plan match or no match | Distinguishes the incident's saved authorization from a merely scheduled future plan |
 | Telegram and response | Delivery, pending decision, denial, expiry, block and rollback state | Reports the separate response workflow and any execution receipt |
@@ -168,7 +168,7 @@ A “current active version changed” conflict means another activation occurre
 
 ## 6. Read pipeline configuration
 
-Open **Settings → Pipeline configuration**. This is explicitly **read only**; it has no Apply or Save control.
+Open **Settings → Pipeline configuration**. The provider selector lets you activate Ollama or Gemini and test a candidate with fixed synthetic evidence. The pipeline configuration tables are read only. [Gemini setup and evidence-sharing controls](GEMINI_PROVIDER.md)
 
 | Item | Why it matters |
 | --- | --- |
@@ -194,7 +194,7 @@ Changing a prompt does not change these controls. Changing source constants or p
 When an incident is awaiting human review:
 
 1. Select it in **Incident history** and confirm its number/revision and source/target.
-2. Read **AI security judgment**, **Observed facts**, **Python scope comparisons**, coverage and retained errors. If output was rejected, there may be no accepted AI verdict.
+2. Read **AI assessment**, **Observed facts**, **Python scope comparisons**, coverage and retained errors. Windows SSH prose uses the verdict on the first line when it explicitly states Benign or Suspicious. The badge otherwise shows **No verdict yet**.
 3. In **Human review**, enter **Reviewer name**, choose a conclusion and optionally enter **Review notes** explaining the evidence checked. Notes have no minimum or maximum character-count validation; general request-size/text protections still apply.
 4. Click **Save human review** and check the resulting workflow state and **Review history**.
 
@@ -206,7 +206,7 @@ When an incident is awaiting human review:
 
 **Add follow-up review** opens another entry after resolution. Reviews are append-only rather than overwriting the original AI report or an older human conclusion. **Send Telegram review notice** queues an incident-bound review notice for the existing monitor's handler; it does not make the dashboard a new bot poller. A running Telegram-enabled monitor is required, and existing sent/uncertain/resolved notices are not simply resent by repeated clicks.
 
-The Telegram conclusion buttons record the same kind of separate human review. A human Suspicious conclusion is not a firewall approval. Need more evidence does not automatically collect another source or make another model request. A changed revision/snapshot or newer review requires refreshing and inspecting the current case; an unresolved active response request must be handled before closing the investigation.
+The Telegram notice includes an excerpt of the AI assessment and a link to the full incident. The conclusion buttons record the same independent human review. **Need more evidence** keeps the case open for the operator. A changed revision or newer review requires inspecting the current case.
 
 ## 8. Know when changes take effect
 

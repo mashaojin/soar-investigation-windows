@@ -1,5 +1,9 @@
 'use strict';
 let experimentData=null,experimentBusy=false,promptLoaded=false,ruleRead=null,ruleValidation=null,promptOptionsSignature='',sampleOptionsSignature='';
+let providerDirty=false,providerRevision=null;
+function providerDraft(){return {provider:$('assessment-provider').value,model:$('provider-model').value.trim(),expected_model_version:$('provider-version').value.trim()};}
+function providerRoute(){const cloud=$('assessment-provider').value==='gemini';$('provider-route').textContent=cloud?'Draft route: Google cloud API. No real evidence is uploaded without separate local consent.':'Draft route: the explicitly configured Ollama host. Cloud aliases are not enabled here.';}
+function renderProvider(p){if(!p)return;$('provider-current').textContent='Active: '+p.provider+' / '+p.model+' · '+p.route.toUpperCase()+' · selection '+p.selection_id.slice(0,12);$('provider-access').textContent=p.access?.note||'';if(!providerDirty){$('assessment-provider').value=p.provider;$('provider-model').value=p.model;$('provider-version').value=p.expected_model_version;providerRevision=p.selection_id;}providerRoute();}
 const expMessage=(text,error=false)=>{const el=$('experiment-message');el.textContent=text;el.className=error?'error':'';};
 async function experimentAPI(path,values){const options=values===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json','X-SOAR-CSRF':data?.csrf_token||''},body:JSON.stringify(values)};
 const response=await fetch(path,options);const result=await response.json();if(!response.ok)throw new Error(result.error||'Operation unavailable');return result;}
@@ -7,6 +11,7 @@ async function expTask(work){if(experimentBusy)return;experimentBusy=true;try{aw
 function promptSize(){$('prompt-size').textContent=new TextEncoder().encode($('prompt-text').value).length+' / 12000 bytes';}
 function setPrompt(version){$('prompt-text').value=version.text;$('prompt-label').value=version.label;promptLoaded=true;promptSize();}
 function renderExperiments(){if(!experimentData)return;const d=experimentData;
+renderProvider(d.provider);
 $('active-prompt').textContent='Active: '+d.active.label+' · '+d.active.id.slice(0,12);
 const selected=$('prompt-version').value||d.active.id;
 const promptSignature=JSON.stringify([d.active.id,d.prompts.map(p=>[p.id,p.label])]);if(promptSignature!==promptOptionsSignature){$('prompt-version').replaceChildren(...d.prompts.map(p=>{const o=node('option',p.label+' · '+p.id.slice(0,10)+(p.id===d.active.id?' (active)':''));o.value=p.id;return o;}));promptOptionsSignature=promptSignature;}
@@ -20,10 +25,10 @@ $('python-settings').replaceChildren(configurationTable([
 ['Log arrival allowance',d.python.arrival_allowance_seconds+' seconds','Waits after the window ends so delayed records can arrive before analysis.'],
 ['Pre-alert evidence',d.python.unapproved_pre_alert_context_seconds+' seconds','Includes up to this much earlier SSH evidence, since login attempts can precede the first alert.'],
 ['Approved-test evidence','Full approved plan window','Checks SSH evidence across the plan’s start and end times; does not separately investigate before or after the plan.'],
-['Assessment roles','Model verdict · Python validation','The configured model assesses the evidence. Python checks the result and enforces separate approval for eligible firewall actions.']
+['Assessment roles','Advisory report · human review','For Windows SSH incidents the model explains the evidence and suggests a next step. Python checks report length and citation IDs. The operator records the conclusion.']
 ]));
 $('model-settings').replaceChildren(configurationTable([
-['Model',d.model.name,'Local model used to assess the supplied evidence.'],
+['Model',d.model.name,'Configured provider/model for future assessments; historical incidents retain their original identity.'],
 ['Context capacity',d.model.options.num_ctx.toLocaleString()+' tokens','Configured capacity for input and output together; this is a limit, not usage per incident.'],
 ['Output limit',d.model.options.num_predict.toLocaleString()+' tokens','Caps the model’s generated response. A response cut off at the limit is not accepted as complete.']
 ]));renderComparisons();}
@@ -49,3 +54,7 @@ $('validate-rule').onclick=()=>expTask(async()=>{if(!ruleRead)throw new Error('R
 $('apply-rule').onclick=()=>expTask(async()=>{if(!ruleValidation)throw new Error('Validate the exact draft first.');const validated=ruleValidation;ruleValidation=null;$('apply-rule').disabled=true;expMessage('Applying the validated rule and waiting for Suricata reload…');const result=await experimentAPI('/api/rules/apply',{id:validated.id,validation_token:validated.validation_token});$('rule-review').hidden=false;$('rule-review').textContent=JSON.stringify(result,null,2);expMessage('Victim activation result: '+result.status,result.status!=='active');if(result.status==='active')renderRule(await experimentAPI('/api/rules/read',{}));});
 $('restore-rule').onclick=()=>expTask(async()=>{if(!ruleRead?.last_activation?.backup_id)throw new Error('Read a verified activation with a backup first.');expMessage('Validating the previous rule and restoring it with a fresh revision…');const result=await experimentAPI('/api/rules/restore',{expected_hash:ruleRead.hash,backup_id:ruleRead.last_activation.backup_id});expMessage('Restore result: '+result.status,result.status!=='active');renderRule(await experimentAPI('/api/rules/read',{}));});
 setInterval(()=>{if($('experiment-drawer').open&&!experimentBusy)loadExperiments().catch(error=>expMessage(error.message,true));},3000);
+for(const id of ['assessment-provider','provider-model','provider-version'])$(id).addEventListener('input',()=>{providerDirty=true;if($('assessment-provider').value==='ollama')$('provider-version').value=$('provider-model').value;providerRoute();});
+$('assessment-provider').addEventListener('change',()=>{const cloud=$('assessment-provider').value==='gemini';const model=cloud?'gemini-2.5-flash-lite':(experimentData?.provider?.provider==='ollama'?experimentData.provider.model:'gemma3:1b');$('provider-model').value=model;$('provider-version').value=model;providerRoute();});
+$('activate-provider').onclick=()=>expTask(async()=>{const result=await experimentAPI('/api/providers/activate',{...providerDraft(),expected_selection:providerRevision});providerDirty=false;await loadExperiments();expMessage(result.note+' Invalidated: '+result.invalidated_approvals+'.');});
+$('check-provider').onclick=()=>expTask(async()=>{expMessage('Checking fixed synthetic evidence only. Gemini requires a local key and verified API allowance; no paid fallback.');const result=await experimentAPI('/api/providers/check',providerDraft());$('provider-check-result').textContent=JSON.stringify(result,null,2);expMessage('Synthetic check finished. Review the report, length and citation checks.');});

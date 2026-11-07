@@ -165,11 +165,19 @@ def reason_for_review(incident):
 def notification_message(incident,identity,notification_id=None):
     from incident_labels import header
     from experimental_assessment import experimental_metadata
-    text=('🟡 Manual review needed on the dashboard.\n'
+    report = incident.get('report') or {}
+    assessment = (report.get('reason') or '').strip()
+    if assessment:
+        excerpt = assessment if len(assessment) <= 600 else assessment[:600].rstrip() + '…'
+        summary = f"AI assessment:\n{excerpt}\n\n"
+        heading = '🟡 Human review requested.\n'
+    else:
+        summary = f"Reason: {reason_for_review(incident)}\n"
+        heading = '🟡 Manual review needed on the dashboard.\n'
+    text=(heading
         +('Experimental AI — unverified; response actions disabled.\n' if experimental_metadata(incident.get('metadata')) else '')
-        +header(incident)+
-        f"Reason: {reason_for_review(incident)}\n"
-        f"http://127.0.0.1:8765/#incident={incident['incident_id']}")
+        +header(incident)+summary+
+        f"Full incident: http://127.0.0.1:8765/#incident={incident['incident_id']}")
     payload=dict(chat_id=identity['chat_id'],text=text)
     if notification_id:
         payload['reply_markup']={'inline_keyboard':[
@@ -231,7 +239,8 @@ def deliver_notifications(db_path,policy,client,identity):
         if enabled:
             rows=db.execute('''SELECT i.incident_id FROM incidents i JOIN analyses a
                 ON a.incident_id=i.incident_id AND a.revision=i.revision
-                WHERE i.status='manual_review' AND a.status='manual_review' AND a.report IS NULL
+                WHERE i.status='manual_review' AND a.status='manual_review'
+                AND (a.report IS NULL OR json_extract(a.report,'$.format')='advisory_text')
                 AND datetime(a.created_at)>=datetime(?)''',(enabled,)).fetchall()
             for row in rows:
                 incident=attach(db,load_incident(db,row['incident_id']))

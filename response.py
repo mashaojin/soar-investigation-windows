@@ -101,8 +101,13 @@ def plan_for(evidence, policy):
 
 
 def bound_plan(evidence, report, metadata, policy, now):
+    if report.get('format') == 'advisory_text':
+        raise ValueError('Advisory reports cannot authorize a response plan')
     from experimental_assessment import experimental_metadata
     if experimental_metadata(metadata):raise ValueError('Unverified experimental assessment cannot authorize a response plan')
+    from provider_state import effective,validate_binding
+    if effective(policy)['selection_id']!='default' or metadata.get('provider_binding'):
+        validate_binding(metadata,policy)
     plan=plan_for(evidence,policy)
     if policy['mode']=='live':
         from live_response import validate_live_evidence
@@ -123,7 +128,7 @@ def evidence_context(metadata, evidence):
         if saved.get('human_approved_live'):context['model_qualification']='operator_accepted_unqualified'
         traces=saved.get('tool_trace',[])
         direct=saved.get('investigation')
-        if saved.get('engine')=='ollama_direct' and direct:
+        if saved.get('engine') in ('ollama_direct','gemini_direct') and direct:
             traces=[{'tool':'get_ssh_auth_summary','result':direct['authentication']},
                     {'tool':'get_approved_test_plan','result':direct['plan_evidence']}]
         for call in traces:
@@ -172,7 +177,9 @@ def queue_reports(db_path, policy, identity, *, now=None):
             LEFT JOIN approval_requests r ON r.incident_id=i.incident_id AND r.revision=i.revision
             WHERE ((a.status='complete' AND i.status='complete') OR
                    (a.status='manual_review' AND i.status='manual_review' AND a.report IS NOT NULL
-                    AND json_extract("""+metadata+""",'$.assessment_version')=?)) AND r.request_id IS NULL""",(VERSION,)).fetchall()
+                    AND json_extract("""+metadata+""",'$.assessment_version')=?))
+            AND json_extract(a.report,'$.format') IS NOT 'advisory_text'
+            AND r.request_id IS NULL""",(VERSION,)).fetchall()
         queued = 0
         for incident, revision, evidence, report, metadata in rows:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='human_reviews'").fetchone():

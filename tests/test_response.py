@@ -36,7 +36,7 @@ class ResponseTests(unittest.TestCase):
         collect("fixtures/eve.json", self.db)
         group_events(self.db)
         analyze_next(self.db, {}, now=datetime(2026, 10, 21, tzinfo=timezone.utc),
-                     runner=lambda *args: {"text": json.dumps(REPORT)})
+                     runner=lambda *args: {"text": json.dumps(REPORT),"model":"gemma4:e4b"})
         with sqlite3.connect(self.db) as db:
             db.execute("UPDATE analyses SET status='complete',report=?",(json.dumps(REPORT),))
             db.execute("UPDATE incidents SET status='complete'")

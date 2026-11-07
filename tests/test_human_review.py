@@ -182,6 +182,17 @@ class HumanReviewTests(ReviewFixture,unittest.TestCase):
         self.assertIn('Manual review needed on the dashboard',payload['text']);self.assertIn('Reason:',payload['text'])
         self.assertEqual(len(payload['reply_markup']['inline_keyboard']),2)
 
+    def test_advisory_notice_includes_bounded_assessment_and_review_buttons(self):
+        reason = 'Assessment: Suspicious\nUnexpected root attempt [E2].'
+        incident = dict(incident_id=IDENT,revision=2,report=dict(format='advisory_text',
+                        reason=reason+' '+('extra detail '*100)+'END'))
+        payload = notification_message(incident,self.identity,'a'*24)
+        self.assertIn('AI assessment:\n'+reason,payload['text'])
+        self.assertNotIn('END',payload['text'])
+        self.assertIn('…',payload['text'])
+        self.assertEqual([button['callback_data'][:4] for row in payload['reply_markup']['inline_keyboard']
+                          for button in row],['hr:b','hr:s','hr:e'])
+
     def test_new_failures_notify_after_activation_without_historical_flood(self):
         client=Telegram()
         self.assertEqual(deliver_notifications(self.path,{'review_notifications_enabled_after':'2026-11-04T22:42:00Z'},client,self.identity),'idle')

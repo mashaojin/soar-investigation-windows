@@ -83,4 +83,4 @@ def runtime_settings(root):
     path=Path(root)/'runtime.ssh.live.local.json'
     value=json.loads(path.read_text()) if path.exists() else {}
     profile=load_profile(value,root)
-    return dict(value,lab_profile=profile,ollama=dict(profile['ollama'],**value.get('ollama',{})))
+    return dict(value,lab_profile=profile,ollama=dict(profile['ollama'],**value.get('ollama',{})),_provider_root=str(Path(root).resolve()))

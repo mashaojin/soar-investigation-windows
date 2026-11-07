@@ -55,7 +55,7 @@ def main():
     if args.service=='status':
         from dashboard import snapshot
         value=snapshot(root)
-        print(json.dumps(dict(platform=lab['platform'],model=lab['ollama']['model'],timezone=lab['display_timezone'],response_policy=value['response_policy'],history=value['history']),indent=2))
+        print(json.dumps(dict(platform=lab['platform'],model=value['assessment_provider']['model'],provider=value['assessment_provider']['provider'],route=value['assessment_provider']['route'],timezone=lab['display_timezone'],response_policy=value['response_policy'],history=value['history']),indent=2))
         return 0
     if args.service=='dashboard':
         if args.telegram or args.env_file or args.duration is not None or args.collection_only or args.experimental_assessment or args.human_approved_live:parser.error('Dashboard does not collect logs, poll Telegram or load credentials')

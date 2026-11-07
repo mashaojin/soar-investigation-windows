@@ -18,7 +18,7 @@ def audit(root, credentials_file=None):
         for line in Path(credentials_file).read_text(encoding='utf-8-sig').splitlines():
             if not line.strip() or line.lstrip().startswith('#'):continue
             key,separator,value=line.partition('=')
-            if separator and key.strip().startswith('SOC_TELEGRAM_'):
+            if separator and (key.strip().startswith('SOC_TELEGRAM_') or key.strip()=='GEMINI_API_KEY'):
                 try:literal=ast.literal_eval(value.strip())
                 except (ValueError,SyntaxError):raise ValueError('Invalid local credential data; contents withheld') from None
                 if isinstance(literal,str) and len(literal)>=6:needles.append(literal)
@@ -36,6 +36,8 @@ def audit(root, credentials_file=None):
         if p.suffix.lower() in ('.png','.jpg','.jpeg','.gif','.pdf','.docx'):continue
         text=p.read_text(encoding='utf-8-sig',errors='replace')
         if (re.search(r'\b\d{8,12}:[A-Za-z0-9_-]{30,}\b',text)
+                or re.search(r'AIza[0-9A-Za-z_-]{35}',text)
+                or re.search(r'AQ\.[0-9A-Za-z_-]{40,}',text)
                 or re.search(r'-----BEGIN (?:OPENSSH |RSA |EC )?PRIVATE KEY-----',text)
                 or any(value in text for value in needles)):
             findings.append(dict(path=name,issue='credential pattern or configured credential match'))

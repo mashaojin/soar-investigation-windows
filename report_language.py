@@ -32,6 +32,8 @@ def plain_text(text,scenario=None):
 def present_report(report):
     if not report: return None
     shown=deepcopy(report)
+    if shown.get('format') == 'advisory_text':
+        return shown
     shown['reason']=plain_text(report.get('reason'),report.get('scenario'))
     shown['recommendations']=[plain_text(item,report.get('scenario')) for item in report.get('recommendations',[])]
     shown['next_step']=NEXT_STEPS.get(report.get('recommended_action'),report.get('recommended_action'))

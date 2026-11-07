@@ -73,6 +73,8 @@ def snapshot(root=ROOT):
     from lab_config import load_profile
     lab=load_profile(root=root)
     result={'updated_at':now.isoformat(),'display_timezone':lab['display_timezone'],'platform':lab['platform']}
+    from provider_service import ProviderService
+    result['assessment_provider']=ProviderService(root).state()
     try:
         policy=json.loads((root/'response.local.json').read_text())
         result['response_policy']={'mode':policy['mode'],'duration_seconds':policy['duration_seconds']}
@@ -159,6 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             '/api/rules/restore':self.server.rules.restore,
             '/api/reviews/save':self.server.reviews.save,
             '/api/reviews/notify':self.server.reviews.notify}
+        actions.update({'/api/providers/activate':self.server.providers.activate,'/api/providers/check':self.server.providers.check})
         if path not in ('/api/plans/validate','/api/plans/approve') and path not in actions:
             self.send_error(404);return
         try:
@@ -205,6 +208,8 @@ def make_server(root=ROOT, port=8765):
     server.root=Path(root).resolve()
     server.csrf_token=secrets.token_hex(32)
     server.editor=PlanEditor(server.root)
+    from provider_service import ProviderService
+    server.providers=ProviderService(server.root)
     from experiment_store import ExperimentStore
     from rule_editor import RuleEditor
     server.experiments=ExperimentStore(server.root)

@@ -43,7 +43,7 @@ def plan_view(plan, now=None, lab=None):
 def authorization(incident,plans,now,plan_error=None,lab=None):
     metadata=incident.get('metadata',{})
     direct=metadata.get('investigation')
-    if metadata.get('engine')=='ollama_direct' and direct:
+    if metadata.get('engine') in ('ollama_direct','gemini_direct') and direct:
         evidence=direct['plan_evidence']
         plan=evidence['plan']
         return {'source':'recorded','plan':plan_view(plan,now,lab) if plan else None,

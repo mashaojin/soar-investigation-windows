@@ -14,7 +14,8 @@ from approved_plans import select_plan
 from analyst import analyze_next
 from experiment_store import active_instruction
 from lab_config import runtime_settings
-from ollama_analyst import assessment_payload,make_prompt,model_config,ollama_report,validate_assessment
+from ollama_analyst import assessment_payload,make_prompt,model_config,validate_assessment
+from assessment_providers import provider_report as ollama_report,freeze
 from ollama_transport import request_json
 from ssh_investigation import build_bundle_job
 from ssh_scenarios import ROOT as FIXTURES,load_scenario,plan_checks
@@ -61,7 +62,7 @@ def local_safety_checks():
                 malformed_output={'passed':malformed,'model_calls':0})
 
 
-def run(output,instruction=None,*,claims_first=False,model=None,threads=None):
+def run(output,instruction=None,*,claims_first=False,model=None,threads=None,provider=None,expected_model_version=None):
     settings=runtime_settings(ROOT);configured,options=model_config(settings)
     if model or threads is not None:
         settings=deepcopy(settings)
@@ -69,9 +70,15 @@ def run(output,instruction=None,*,claims_first=False,model=None,threads=None):
         if threads is not None:settings['lab_profile']['ollama']['num_thread']=threads
         settings['ollama']=dict(settings['lab_profile']['ollama'])
     if claims_first:settings['ollama']=dict(settings['ollama'],claims_first=True)
-    configured,options=model_config(settings)
+    from provider_state import effective
+    if provider or model:
+        if provider=='gemini' and (not model or not expected_model_version):raise ValueError('Gemini evaluation requires an explicit model and expected returned version')
+        selected=provider or 'ollama';name=model or settings['ollama']['model']
+        settings['_provider_snapshot']=effective(settings,dict(provider=selected,model=name,expected_model_version=expected_model_version or name))
+    settings=freeze(dict(settings,_synthetic_evaluation=True));configured=effective(settings)
+    options={k:configured[k] for k in ('num_ctx','num_predict')}
     instruction=instruction or active_instruction(ROOT)['text']
-    receipt=dict(model=configured['model'],options=options,instruction_hash=hashlib.sha256(instruction.encode()).hexdigest(),
+    receipt=dict(model=configured['model'],provider=configured['provider'],route=configured['route'],options=options,instruction_hash=hashlib.sha256(instruction.encode()).hexdigest(),
                  synthetic_only=True,responses_disabled=True,attacks_launched=0,telegram_messages=0,firewall_actions=0,
                  results=[],safety_checks=local_safety_checks(),passed=False)
     for case in boundary_cases():
@@ -89,7 +96,7 @@ def run(output,instruction=None,*,claims_first=False,model=None,threads=None):
             row['security_judgment_review']='Required: reference-label agreement alone does not certify the explanation.'
         except Exception as error:row['error']=(type(error).__name__+': '+str(error))[:3000]
         row['wall_seconds']=round(time.monotonic()-started,3)
-        row['loaded_models']=request_json(configured,'/api/ps',timeout=10)
+        row['loaded_models']=request_json(configured,'/api/ps',timeout=10) if configured['provider']=='ollama' else {'note':'Cloud provider; no local model status request'}
         receipt['results'].append(row);output.write_text(json.dumps(receipt,indent=2)+'\n')
         print(json.dumps({k:row.get(k) for k in ['name','valid_structured_response','verdict_matches_reference','wall_seconds','report','error']}),flush=True)
     receipt['passed']=all(r['valid_structured_response'] and r['verdict_matches_reference'] for r in receipt['results']) and all(v['passed'] for v in receipt['safety_checks'].values())
@@ -103,6 +110,8 @@ if __name__=='__main__':
     parser.add_argument('--output',type=Path,default=ROOT/'verification-model-boundaries.json')
     parser.add_argument('--claims-first',action='store_true')
     parser.add_argument('--model',help='Explicit evaluation override; never activates a model')
+    parser.add_argument('--provider',choices=['ollama','gemini'])
+    parser.add_argument('--expected-model-version')
     parser.add_argument('--threads',type=int,choices=range(1,5),help='Explicit evaluation CPU threads; never activates configuration')
-    args=parser.parse_args();result=run(args.output,args.instruction_file.read_text() if args.instruction_file else None,claims_first=args.claims_first,model=args.model,threads=args.threads)
+    args=parser.parse_args();result=run(args.output,args.instruction_file.read_text() if args.instruction_file else None,claims_first=args.claims_first,model=args.model,threads=args.threads,provider=args.provider,expected_model_version=args.expected_model_version)
     raise SystemExit(0 if result['passed'] else 1)

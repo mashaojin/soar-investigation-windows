@@ -24,6 +24,16 @@ def settings():
 
 
 class ExperimentalTests(unittest.TestCase):
+    def test_gemini_review_authorization_is_bound_to_provider_selection(self):
+        from provider_state import effective
+        value=settings()
+        route=effective(value,dict(provider='gemini',model='gemini-test',expected_model_version='gemini-test-001'))
+        value['_provider_snapshot']=route
+        value['experimental_assessment'].update(model=route['model'],provider='gemini',provider_binding=route['binding'])
+        self.assertTrue(qualification(value)['human_review_required'])
+        value['experimental_assessment']['provider_binding']='old-selection'
+        with self.assertRaises(ValueError):qualification(value)
+
     def test_authorization_is_model_bound_and_cannot_enable_live(self):
         value=settings();policy=dict(mode='dry_run',experimental_assessment=value['experimental_assessment'])
         self.assertTrue(qualification(value,policy)['human_review_required'])
@@ -32,9 +42,9 @@ class ExperimentalTests(unittest.TestCase):
         with self.assertRaises(ValueError):qualification(bad)
         self.assertEqual(qualification({}),{})
 
-    def test_valid_suspicious_report_is_retained_but_requires_review_once(self):
+    def test_advisory_prose_is_retained_but_cannot_queue_block_approval(self):
         evidence,investigation=job('unapproved_activity')
-        answer=dict(report('SUSPICIOUS','Sixteen failed logins warrant investigation.'),claims=observed_claims(investigation),recommended_action='REQUEST_BLOCK_APPROVAL')
+        answer='Suspicious activity [E2, P1]. Next step: ask about blocking the source.'
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'state.sqlite3'
             with closing(sqlite3.connect(path)) as db,db:
@@ -43,14 +53,24 @@ class ExperimentalTests(unittest.TestCase):
             value=dict(settings(),ssh_enrichment=True,approved_plans='unused.json')
             with patch('ssh_live_investigation.prepare_live_job',return_value=('',investigation)),patch('analyst.ollama_report'):
                 from unittest.mock import MagicMock
-                runner=MagicMock(return_value={'text':json.dumps(answer),'model_qualification':'qualified'})
+                runner=MagicMock(return_value={'text':answer,'model_qualification':'qualified'})
                 first=analyze_next(path,value,now=datetime(2030,1,1,tzinfo=timezone.utc),runner=runner)
                 second=analyze_next(path,value,now=datetime(2030,1,1,tzinfo=timezone.utc),runner=runner)
             self.assertEqual(first['status'],'manual_review');self.assertEqual(second['status'],'idle');self.assertEqual(runner.call_count,1)
             with closing(sqlite3.connect(path)) as db:
                 saved,metadata=db.execute('SELECT report,metadata FROM analyses').fetchone()
-            self.assertEqual(json.loads(saved)['verdict'],'SUSPICIOUS')
+            self.assertEqual(json.loads(saved),dict(format='advisory_text',reason=answer,evidence_refs=['E2','P1']))
             self.assertEqual(json.loads(metadata)['model_qualification'],'experimental_unverified')
+            import test_continuous_response as legacy
+            self.assertEqual(queue_reports(path,dict(mode='dry_run',approval_ttl_seconds=600),legacy.IDENTITY),0)
+
+    def test_advisory_checks_length_and_citation_membership(self):
+        from advisory_report import validate
+        payload = dict(observed_facts={'E2': {}}, policy_findings={'P1': {}})
+        self.assertEqual(validate('See [E2, P1] and `E2`.',payload)['evidence_refs'],['E2','P1'])
+        for text in ('   ', 'é'*2049, 'See [E2, E99].', 'See `P99`.'):
+            with self.subTest(text=text[:30]),self.assertRaises(ValueError):
+                validate(text,payload)
 
     def test_experimental_report_gets_review_buttons_without_response_plan(self):
         import test_continuous_response as legacy
