@@ -121,7 +121,9 @@ class ExperimentStore:
         # Reject a prompt that already exceeds the budget with the selected/latest evidence.
         from ollama_analyst import make_prompt
         samples=self.saved_samples()
-        if samples: make_prompt(samples[0]['payload'],instruction=text)
+        if samples:
+            knowledge = samples[0]['metadata'].get('assessment_knowledge')
+            make_prompt(samples[0]['payload'], instruction=text, advisory=bool(knowledge), knowledge=knowledge)
         i=sha(text)
         with closing(sqlite3.connect(self.path)) as db,db:
             db.execute('INSERT OR IGNORE INTO prompts VALUES(?,?,?,?)',(i,text,now(),label.strip()))
@@ -171,13 +173,15 @@ class ExperimentStore:
         if row is None: raise ValueError('Candidate prompt version not found.')
         baseline=sample['metadata'].get('prompt_version') or dict(id=sha(INSTRUCTION),text=INSTRUCTION,label='Original default')
         original_advisory = sample['metadata'].get('assessment_format') == 'advisory_text'
-        original = make_prompt(sample['payload'],instruction=baseline['text'],advisory=original_advisory)
+        knowledge = sample['metadata'].get('assessment_knowledge')
+        original = make_prompt(sample['payload'], instruction=baseline['text'], advisory=original_advisory,
+                               knowledge=knowledge)
         original_hash = sample['original_prompt_hash']
         if original_advisory and sha(original)!=original_hash:
-            original = make_prompt(sample['payload'],instruction=baseline['text'],advisory=True,advisory_routing=False)
+            original = make_prompt(sample['payload'],instruction=baseline['text'],advisory=True,advisory_routing=False,knowledge=knowledge)
         if sha(original)!=original_hash:
             raise ValueError('The original instruction cannot be reconstructed exactly; use an incident with recorded prompt provenance.')
-        make_prompt(sample['payload'],instruction=row[0],advisory=settings['_advisory_report'])
+        make_prompt(sample['payload'],instruction=row[0],advisory=settings['_advisory_report'],knowledge=knowledge)
         snapshot=dict(sample,baseline=baseline,candidate=dict(id=values['prompt_id'],text=row[0],label=row[1]),
                       evidence_hash=sha(encode(sample['payload'])),python=python_context(),model=configured['model'],options=options,
                       model_settings=settings,
@@ -204,14 +208,17 @@ class ExperimentStore:
             original_report=snapshot['original_report'],responses_disabled=True,arms=[])
         try:
             advisory = snapshot.get('model_settings', {}).get('_advisory_report') is True
+            knowledge = snapshot['metadata'].get('assessment_knowledge')
+            if knowledge:
+                results['assessment_knowledge'] = knowledge
             for name in ('baseline','candidate'):
-                prompt=make_prompt(snapshot['payload'],instruction=snapshot[name]['text'],advisory=advisory)
+                prompt=make_prompt(snapshot['payload'],instruction=snapshot[name]['text'],advisory=advisory,knowledge=knowledge)
                 arm=dict(name=name,prompt_id=snapshot[name]['id'],prompt_label=snapshot[name]['label'])
                 try:
                     envelope=(self.runner or provider_report)(prompt,dict(snapshot.get('model_settings',{}),investigation=snapshot['investigation']))
                     arm['raw_output']=envelope['text']
                     arm['metadata']={k:v for k,v in envelope.items() if k!='text'}
-                    arm['report'] = (validate_advisory(envelope['text'],snapshot['payload']) if advisory else
+                    arm['report'] = (validate_advisory(envelope['text'],snapshot['payload'],knowledge=knowledge) if advisory else
                                      validate_assessment(envelope['text'],snapshot['payload'],snapshot['investigation']))
                     arm['status']='valid'
                 except Exception as exc:

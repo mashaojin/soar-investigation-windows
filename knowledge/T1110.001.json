@@ -1,0 +1,6 @@
+{
+  "technique_id": "T1110.001",
+  "name": "Password Guessing",
+  "url": "https://attack.mitre.org/techniques/T1110/001/",
+  "note": "Repeated failed password authentication against SSH can resemble password guessing. A network connection alert alone cannot distinguish password attempts from other connection activity. Similar behavior can occur in an authorized test. Use scoped authentication records to discuss observed failures and any successful logins."
+}

@@ -84,7 +84,7 @@ def assessment_payload(evidence, investigation=None):
     return {'observed_facts': refs, 'policy_findings': policy}
 
 
-def make_prompt(payload, instruction=None, *, advisory=False, advisory_routing=True):
+def make_prompt(payload, instruction=None, *, advisory=False, advisory_routing=True, knowledge=None):
     if instruction is None: instruction=INSTRUCTION
     else:
         from experiment_store import validate_instruction
@@ -101,6 +101,9 @@ def make_prompt(payload, instruction=None, *, advisory=False, advisory_routing=T
             instruction = guidance + '\n' + ADVISORY_INSTRUCTION
         else:
             instruction = PREVIOUS_INSTRUCTION + guidance
+        if knowledge:
+            from attack_knowledge import context_block
+            instruction += context_block(knowledge)
         instruction += '\nEvidence:\n'
     prompt = instruction + json.dumps(payload, sort_keys=True, separators=(',', ':'))
     if len(prompt.encode()) > 16000:

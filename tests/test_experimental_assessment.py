@@ -53,6 +53,47 @@ class ExperimentalTests(unittest.TestCase):
             with self.subTest(answer=answer):
                 self.check_advisory_routing(answer,status,notifications)
 
+    def test_windows_ollama_assessment_retrieval_and_fallback(self):
+        evidence, investigation = job('unapproved_activity')
+        for mode in ('included', 'disabled', 'no_match', 'unavailable'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / 'state.sqlite3'
+                with closing(sqlite3.connect(path)) as db, db:
+                    db.execute('CREATE TABLE incidents(incident_id TEXT PRIMARY KEY,revision INTEGER,evidence TEXT,alert_count INTEGER,status TEXT)')
+                    db.execute("INSERT INTO incidents VALUES('i',1,?,1,'pending')", (json.dumps(evidence),))
+                value = dict(settings(), ssh_enrichment=True, approved_plans='unused.json',
+                             attack_retrieval=mode != 'disabled')
+                answer = 'Assessment: Suspicious\nRepeated failures [E2, P1].'
+                if mode == 'included':
+                    answer += ' Behavior resembles password guessing [K1, T1110.001].'
+                from attack_knowledge import retrieve
+                from ollama_analyst import assessment_payload
+                notes = retrieve(assessment_payload(evidence, investigation)) if mode == 'included' else {}
+                with patch('ssh_live_investigation.prepare_live_job', return_value=('', investigation)), \
+                        patch('attack_knowledge.retrieve', return_value=notes) as lookup, \
+                        patch('analyst.provider_report') as runner:
+                    if mode == 'unavailable':
+                        lookup.side_effect = OSError
+                    runner.return_value = {'text': answer}
+                    result = analyze_next(path, value, now=datetime(2030, 1, 1, tzinfo=timezone.utc), runner=runner)
+                runner.assert_called_once()
+                self.assertEqual(lookup.call_count, int(mode != 'disabled'))
+                self.assertEqual(result['status'], 'manual_review')
+                self.assertEqual('T1110.001' in runner.call_args.args[0], mode == 'included')
+                with closing(sqlite3.connect(path)) as db:
+                    saved, metadata = map(json.loads, db.execute('SELECT report,metadata FROM analyses').fetchone())
+                self.assertEqual(saved['evidence_refs'], ['E2', 'P1'])
+                self.assertEqual(metadata['model_qualification'], 'experimental_unverified')
+                if mode == 'included':
+                    self.assertEqual(len(saved['knowledge_refs']), 1)
+                    self.assertEqual(saved['knowledge_refs'][0]['technique_id'], 'T1110.001')
+                    self.assertEqual(metadata['assessment_knowledge'], notes)
+                else:
+                    self.assertNotIn('knowledge_refs', saved)
+                    self.assertNotIn('assessment_knowledge', metadata)
+                if mode != 'disabled':
+                    self.assertEqual(metadata['attack_retrieval']['status'], mode)
+
     def check_advisory_routing(self,answer,status,notifications):
         evidence,investigation=job('unapproved_activity')
         with tempfile.TemporaryDirectory() as folder:

@@ -101,6 +101,18 @@ else{for(const [index,call] of trace.entries()){$('tools').append(factCard('hist
 const comparison=v.authorization?.scope_comparison;if(comparison&&Object.keys(comparison).length)$('policy-findings').append(factCard('historical-policy','Recorded Python scope comparison',comparison,'Historical findings retained with this incident.'));
 else $('policy-findings').append(node('p','No deterministic findings recorded yet.','muted small'));}
 if(!facts&&!trace.length)$('tools').append(node('p','No scoped authentication evidence recorded yet.','muted small'));
+const attackSources=report?.knowledge_refs||[];
+$('attack-background').hidden=!attackSources.length;
+$('attack-background-body').replaceChildren();
+if(attackSources.length){
+  const references=node('ul');
+  for(const source of attackSources){
+    const link=node('a',source.ref+' · '+source.technique_id+' '+source.name);
+    link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
+    const item=node('li');item.append(link);references.append(item);
+  }
+  $('attack-background-body').append(references);
+}
 const refBox=node('div',undefined,'assessment-references');
 if(report?.evidence_refs?.length){refBox.append(node('span','AI-cited references: '));for(const id of report.evidence_refs){const link=node('a',id);link.href='#evidence-'+id;refBox.append(link,document.createTextNode(' '));}const dependencies=(report.resolved_evidence_refs||[]).filter(id=>!report.evidence_refs.includes(id));if(dependencies.length){refBox.append(node('span',' · Python-linked sources: '));for(const id of dependencies){const link=node('a',id);link.href='#evidence-'+id;refBox.append(link,document.createTextNode(' '));}}refBox.append(node('p',report.reference_limit||'References identify supplied evidence; they do not verify every prose claim.','muted small'));}
 else if(report)refBox.append(node('p',report.format==='advisory_text'?'No evidence IDs cited.':'Historical assessment: structured claim references were not recorded.','muted small'));

@@ -132,7 +132,20 @@ def analyze_next(db_path, settings, *, now=None, runner=provider_report):
         settings['_advisory_report'] = advisory
         from experiment_store import active_instruction, python_context, rule_provenance
         prompt_version=active_instruction(Path(db_path).resolve().parent)
-        prompt = make_prompt(payload,instruction=prompt_version['text'],advisory=advisory)
+        knowledge, retrieval = {}, None
+        if advisory and route['provider'] == 'ollama' and settings.get('attack_retrieval', True):
+            from attack_knowledge import retrieve
+            try:
+                knowledge = retrieve(payload)
+                if knowledge:
+                    prompt = make_prompt(payload, instruction=prompt_version['text'], advisory=True,
+                                         knowledge=knowledge)
+                retrieval = {'status': 'included' if knowledge else 'no_match'}
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                knowledge = {}
+                retrieval = {'status': 'unavailable', 'error': type(exc).__name__}
+        if not knowledge:
+            prompt = make_prompt(payload, instruction=prompt_version['text'], advisory=advisory)
         digest = hashlib.sha256(prompt.encode()).hexdigest()
         prepared = {"engine": "ollama_direct", "assessment_version":VERSION,"assessment_data": payload,
                     "investigation": investigation, "request_count": 0, "request_attempts": 0,
@@ -140,6 +153,10 @@ def analyze_next(db_path, settings, *, now=None, runner=provider_report):
                     "rule_provenance":rule_provenance(Path(db_path).resolve().parent,evidence)}
         prepared.update(experiment)
         prepared.update(live_acceptance)
+        if retrieval is not None:
+            prepared['attack_retrieval'] = retrieval
+        if knowledge:
+            prepared['assessment_knowledge'] = knowledge
         prepared.update(stamp(route))
         prepared['engine']=route['provider']+'_direct'
         if advisory:
@@ -168,7 +185,7 @@ def analyze_next(db_path, settings, *, now=None, runner=provider_report):
         combined.update(stamp(route))
         metadata=json.dumps(combined)
         try:
-            validated = (validate_advisory(envelope["text"], payload) if advisory else
+            validated = (validate_advisory(envelope["text"], payload, knowledge=knowledge) if advisory else
                          validate_assessment(envelope["text"], payload, investigation))
             if investigation and not advisory:
                 validated["scenario"] = "ssh_investigation"

@@ -24,6 +24,7 @@ The model explains the incident, cites evidence and suggests a next step in plai
 - [Three manual scenarios](#three-manual-scenarios)
 - [Telegram decisions and live response](#telegram-decisions)
 - [Stop, restart and recovery](#stop-restart-and-recovery)
+- [MITRE ATT&CK context for SSH](#mitre-attck-context-for-ssh)
 - [Verification and troubleshooting](#verification-status)
 - [Documentation and repository layout](#documentation)
 
@@ -153,6 +154,8 @@ Always select `--profile windows-hyperv` for this lab. The unqualified initializ
 
 Review the newly created private files. Keep lab/runtime model settings consistent. Configure actual guest identities, protected management, strict SSH trust and sensor access before starting collection. Do not copy historical databases, plans, approvals or cursors from a different installation.
 
+Before starting the monitor or creating an approved test plan, synchronize the Windows host, WSL, and all three Linux VMs. On Windows, verify automatic time synchronization in **Settings → Time & language → Date & time**, then check UTC in PowerShell with `(Get-Date).ToUniversalTime().ToString('o')`. Run `date -u` in WSL and on each VM, and check `timedatectl status` on the VMs for `System clock synchronized: yes`. The UTC clocks should agree within a few seconds for the demo. Recheck after resuming a paused VM. The Victim timestamps Suricata alerts and SSH journal records, and clock skew can place those records outside an approved test window.
+
 ### 3. Start the dashboard and collection
 
 For Windows, use two WSL terminals in the repository root:
@@ -204,6 +207,14 @@ First prepare, review, install and independently verify the optional rule helper
 4. Confirm an `active` result and read Victim status again. Use **Restore previous rule and reload** when an editor backup is available; read current status before retrying an uncertain operation.
 
 Applied rules affect future sensor processing. Run fresh manual traffic to test them; historical evidence is not regenerated. See [rule editing and recovery](docs/DASHBOARD.md#4-read-validate-and-apply-a-suricata-rule).
+
+### MITRE ATT&CK context for SSH
+
+In the Windows/Hyper-V Ollama assessment path, an SSH alert for SID `9001001` on TCP/22 with at least two retained failed-password records selects the local [T1110.001 Password Guessing note](knowledge/T1110.001.json). Ollama receives the note in the same advisory request as the Suricata alert, scoped SSH journal and approved-plan checks. The note can inform the assessment label. References such as `[K1]` or `[T1110.001]` resolve to the [official MITRE technique](https://attack.mitre.org/techniques/T1110/001/) under **MITRE ATT&CK background**, separate from incident evidence and Python findings.
+
+Retrieval is enabled by default for eligible Ollama assessments. Set `"attack_retrieval": false` in `runtime.ssh.live.local.json` for evidence-only assessment. A miss, unreadable note or prompt-budget issue also uses the evidence-only prompt. Gemini keeps its existing request scope. Saved prompt comparisons reuse the original captured note in both arms. Retrieval leaves collection-only, experimental review and human-approved live mode gates in effect. Authorization and response eligibility use the recorded evidence, test-plan checks and existing human approvals.
+
+Restart the assessment monitor from WSL after updating. Run a fresh bounded SSH demo and check the main report and its **MITRE ATT&CK background** sources. Saved metadata with `attack_retrieval.status: included` and `assessment_knowledge` confirms the note reached the primary prompt even if the report did not cite it. To exercise the fallback, disable retrieval, restart and use a fresh incident. Only a comparison on identical saved evidence can isolate the note’s effect on the judgment.
 
 ### Save, compare and activate a prompt
 

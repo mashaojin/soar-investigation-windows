@@ -1,5 +1,6 @@
 {
   "ssh_enrichment": true,
+  "attack_retrieval": true,
   "approved_plans": "plans/dashboard-plans.json",
   "ollama": {
     "model": "gemma4:e4b"
